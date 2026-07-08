@@ -10,8 +10,8 @@
 
 const CONFIG = {
   // Mismas claves que el calendario principal (../app.js).
-  supabaseUrl:    "https://zfzzaldibtlaslgkhtlj.supabase.co",
-  supabaseAnonKey:"sb_publishable_cumFbr_o-GSvSWGlR2aekw_Tw5rE8nV",
+  supabaseUrl:    "https://uimqusoylxpyljbfqumm.supabase.co",
+  supabaseAnonKey:"sb_publishable_B_MIa8pWGFjzLhdzLoi61A_kffCRo8",
 
   // PIN de entrada — el mismo para todos.
   // Cambiar antes de desplegar. Distinto de "9014" del calendario familiar.
