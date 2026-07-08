@@ -239,39 +239,51 @@ body.admin-mode .admin-only{ display:inline-flex; }
 .brush-bar .btn.ghost{ padding:8px 10px; }
 .brush-bar .btn:disabled{ opacity:.4; cursor:not-allowed; }
 
-/* Ticket de tarea (esquina inferior de la celda de salida) */
+/* Ticket de tarea (esquina inferior de la celda de salida).
+   Sin texto. Es un círculo: glass cuando está pendiente, verde cuando
+   está hecho. El cambio de color al tapear es la confirmación. */
 .cell-ticket{
   position:absolute;
-  bottom:4px;
+  bottom:6px;
   left:50%;
   transform:translateX(-50%);
-  display:inline-flex; align-items:center; gap:4px;
-  padding:3px 9px;
-  border-radius:999px;
-  font-size:10px; font-weight:600;
-  line-height:1.2;
+  width:20px;
+  height:20px;
+  border-radius:50%;
   cursor:pointer;
   z-index:2;
   -webkit-tap-highlight-color:transparent;
-  transition:transform .12s ease, background .15s ease, box-shadow .15s ease;
+  transition:transform .15s cubic-bezier(.16,1,.3,1),
+             background .25s ease,
+             box-shadow .25s ease,
+             border-color .25s ease;
 }
-.cell-ticket .ct-ico{ font-size:11px; line-height:1; }
 .cell-ticket.pending{
-  background:rgba(255,255,255,.10);
-  border:1px solid var(--glass-brd);
-  color:var(--text-dim);
-  -webkit-backdrop-filter:blur(8px);
-  backdrop-filter:blur(8px);
+  background:rgba(255,255,255,.08);
+  border:1.5px solid rgba(255,255,255,.4);
+  -webkit-backdrop-filter:blur(6px);
+  backdrop-filter:blur(6px);
 }
-.cell-ticket.pending:hover{ background:rgba(255,255,255,.18); }
+.cell-ticket.pending:hover{
+  background:rgba(255,255,255,.18);
+  border-color:rgba(255,255,255,.6);
+}
 .cell-ticket.done{
   background:linear-gradient(180deg, #10B981, #059669);
-  border:1px solid rgba(255,255,255,.18);
-  color:#fff;
-  box-shadow:0 2px 10px rgba(16,185,129,.45);
+  border:1.5px solid rgba(255,255,255,.32);
+  box-shadow:0 2px 10px rgba(16,185,129,.55),
+             inset 0 1px 0 rgba(255,255,255,.25);
 }
-.cell-ticket:active{ transform:translateX(-50%) scale(.95); }
-.cell-ticket:focus-visible{ outline:2px solid rgba(255,255,255,.7); outline-offset:2px; }
+.cell-ticket:hover{ transform:translateX(-50%) scale(1.12); }
+.cell-ticket:active{ transform:translateX(-50%) scale(.85); }
+.cell-ticket:focus-visible{ outline:2px solid rgba(255,255,255,.8); outline-offset:3px; }
+/* Sutil animación de entrada cuando el ticket pasa a done */
+.cell-ticket.done{ animation:ticketPop .35s cubic-bezier(.16,1,.3,1) both; }
+@keyframes ticketPop{
+  0%  { transform:translateX(-50%) scale(.7); }
+  60% { transform:translateX(-50%) scale(1.15); }
+  100%{ transform:translateX(-50%) scale(1); }
+}
 
 .segments{ position:absolute; left:4px; right:4px; top:26px; display:flex; flex-direction:column; gap:3px; pointer-events:none; }
 .seg{

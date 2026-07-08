@@ -39,7 +39,7 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "11";
+const VERSION = "12";
 const MONTHS  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -630,12 +630,14 @@ function renderGrid(){
         ticket.type = "button";
         ticket.className = `cell-ticket ${c.status === "done" ? "done" : "pending"}`;
         ticket.dataset.cleaningId = c.id;
-        const icon  = c.status === "done" ? "✓" : "+";
-        const label = c.status === "done" ? "Hecho" : "Tarea";
-        ticket.innerHTML = `<span class="ct-ico" aria-hidden="true">${icon}</span><span>${label}</span>`;
+        // Sin texto. Sin icono. La forma y el color hacen todo el trabajo.
+        // El aria-label y el title dan contexto a SR y tooltip.
+        ticket.setAttribute("aria-label", c.status === "done"
+          ? "Tarea hecha. Tocar para deshacer."
+          : "Tocar para marcar como hecha.");
         ticket.title = c.status === "done"
-          ? `Tarea del ${prettyShort(c.scheduled_date)} marcada como hecha`
-          : `Toca para marcar la tarea del ${prettyShort(c.scheduled_date)} como hecha`;
+          ? `Tarea del ${prettyShort(c.scheduled_date)} hecha — tocar para deshacer`
+          : `Tocar para marcar la tarea del ${prettyShort(c.scheduled_date)} como hecha`;
         ticket.addEventListener("click", e => { e.stopPropagation(); onTicketTap(c); });
         cell.appendChild(ticket);
       }
@@ -856,60 +858,21 @@ function closeConfirmModal(result){
   state.pendingCancelRental = null;
 }
 
-// ---------- Ticket: marcar / deshacer tarea ----------
+// ---------- Ticket: toggle directo (sin modal, sin comentario) ----------
+// Tap en ticket pending → done (verde). Tap en ticket done → pending (glass).
+// El cambio de color ES la confirmación. No hay modal ni texto.
 async function onTicketTap(cleaning){
-  if (cleaning.status === "done"){
-    const ok = await askConfirm({
-      title: "¿Deshacer?",
-      tip: `La tarea del ${prettyShort(cleaning.scheduled_date)} volverá a estado pendiente.`,
-      yesLabel: "Sí, deshacer",
-    });
-    if (!ok) return;
-    try{
-      await state.store.upsertCleaning({ ...cleaning, status: "pending", done_at: null });
-      await load();
-      toast("Tarea vuelta a pendiente", "warn");
-    }catch(err){
-      toast("Error: " + (err.message || err), "err");
-    }
-  } else {
-    const result = await askTicket(cleaning);
-    if (!result) return;
-    try{
-      await state.store.upsertCleaning({ ...cleaning, status: "done", done_at: new Date().toISOString() });
-      if (result.comment){
-        await state.store.addComment({
-          id: uuid(),
-          cleaning_id: cleaning.id,
-          author: "equipo",
-          body: result.comment,
-          created_at: new Date().toISOString(),
-        });
-      }
-      await load();
-      toast("✓ Tarea marcada como hecha");
-    }catch(err){
-      toast("Error: " + (err.message || err), "err");
-    }
+  const next = cleaning.status === "done" ? "pending" : "done";
+  const updates = { ...cleaning, status: next };
+  if (next === "done") updates.done_at = new Date().toISOString();
+  else updates.done_at = null;
+  try{
+    await state.store.upsertCleaning(updates);
+    haptic(8);
+    await load();
+  }catch(err){
+    toast("Error: " + (err.message || err), "err");
   }
-}
-
-let ticketResolver = null;
-function askTicket(cleaning){
-  return new Promise(resolve => {
-    ticketResolver = resolve;
-    document.getElementById("ticket-title").textContent = "¿Marcar tarea como hecha?";
-    document.getElementById("ticket-tip").textContent   = `Tarea del ${prettyShort(cleaning.scheduled_date)} · 12:00`;
-    document.getElementById("ticket-confirm").textContent = "Listo";
-    document.getElementById("ticket-comment-field").hidden = false;
-    document.getElementById("ticket-comment").value = "";
-    document.getElementById("ticket-modal").hidden = false;
-    requestAnimationFrame(() => document.getElementById("ticket-confirm").focus());
-  });
-}
-function closeTicketModal(result){
-  document.getElementById("ticket-modal").hidden = true;
-  if (ticketResolver){ ticketResolver(result); ticketResolver = null; }
 }
 
 // ---------- Cancelar arriendo ----------
@@ -1084,15 +1047,7 @@ function bind(){
     if (e.target.id === "confirm-modal") closeConfirmModal(false);
   });
 
-  // Modal ticket
-  document.getElementById("ticket-cancel").addEventListener("click", () => closeTicketModal(null));
-  document.getElementById("ticket-confirm").addEventListener("click", () => {
-    const comment = document.getElementById("ticket-comment").value.trim();
-    closeTicketModal({ comment: comment || null });
-  });
-  document.getElementById("ticket-modal").addEventListener("click", e => {
-    if (e.target.id === "ticket-modal") closeTicketModal(null);
-  });
+  // Modal ticket: ya no existe — el ticket es directo (toggle).
 
   // Cerrar popover al click fuera / scroll / resize
   document.addEventListener("click", e => {
@@ -1107,8 +1062,7 @@ function bind(){
   // Escape
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
-    if (!document.getElementById("ticket-modal").hidden) closeTicketModal(null);
-    else if (!document.getElementById("confirm-modal").hidden) closeConfirmModal(false);
+    if (!document.getElementById("confirm-modal").hidden) closeConfirmModal(false);
     else if (!document.getElementById("rental-modal").hidden) closeRentalForm();
     else { const p = document.getElementById("pop"); if (p) p.hidden = true; }
   });
