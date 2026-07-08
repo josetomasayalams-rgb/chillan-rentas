@@ -428,17 +428,16 @@ function updateLockToggle(){
 }
 function applyLockState(){
   const lock = document.getElementById("lock");
-  const app  = document.getElementById("app");
+  // El `body.locked` (CSS) se encarga de difuminar la app detrás del lock.
+  // NO usamos `app.hidden` porque eso la saca del flujo y no hay
+  // manera de mostrarla de vuelta desde success() sin un parche.
+  // (Este es el patrón que usa el calendario familiar y funciona.)
   if (state.lockEnabled && !state.unlocked){
-    // Mostrar lock, ocultar app
     document.body.classList.add("locked");
     lock.hidden = false;
-    app.hidden = true;
   } else {
-    // Lock desactivado o ya tipeado: mostrar app, ocultar lock
     document.body.classList.remove("locked");
     lock.hidden = true;
-    app.hidden = false;
   }
 }
 function pushUndo(entry){
