@@ -317,6 +317,19 @@ body.admin-mode .admin-only{ display:inline-flex; }
 .admin-btn.on{ background:linear-gradient(180deg,#f59e0b,#d97706); border-color:rgba(255,255,255,.3); font-weight:600; }
 body.admin-mode .app{ box-shadow:0 0 0 2px #f59e0b, var(--shadow); }
 
+/* Lock toggle (en el footer): muestra el estado actual del lock al iniciar.
+   - on (default): "🔒 Con clave" — el lock aparece al cargar la app
+   - off: "🔓 Sin clave" — la app entra directo, sin PIN
+   El off tiene tinte amber para advertir que la app queda sin protección. */
+.lock-btn{ font-size:12px; padding:5px 12px; }
+.lock-btn.off{
+  background:linear-gradient(180deg, rgba(245,158,11,.22), rgba(245,158,11,.12));
+  border-color:rgba(245,158,11,.55);
+  color:#fde68a;
+  font-weight:600;
+}
+.lock-btn.off:hover{ background:linear-gradient(180deg, rgba(245,158,11,.32), rgba(245,158,11,.18)); }
+
 /* ---------- Modal (nuevo/editar arriendo) ---------- */
 .modal-overlay{
   position:fixed; inset:0; z-index:50; display:grid; place-items:center;

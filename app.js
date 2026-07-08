@@ -39,14 +39,15 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "13";
+const VERSION = "14";
 const MONTHS  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
 const LS = {
-  rentals:   "ops-rentals",
-  cleanings: "ops-cleanings",
-  comments:  "ops-comments",
+  rentals:     "ops-rentals",
+  cleanings:   "ops-cleanings",
+  comments:    "ops-comments",
+  lockEnabled: "ops-lock-enabled",     // "1" = mostrar lock al iniciar; "0" = sin clave
 };
 
 // ---------- Estado ----------
@@ -67,6 +68,8 @@ const state = {
   updatedAt: null,
   modal: null,          // { kind: "rental"|"confirm", rental?, resolver? }
   undo: [],             // pila de inversas (máx 7) para el botón Deshacer
+  lockEnabled: true,    // mostrar lock al iniciar (persiste en localStorage)
+  unlocked: false,      // sesión: true después de tipear la clave correcta
 };
 const UNDO_LIMIT = 7;
 
@@ -398,7 +401,46 @@ function brushClass(dateStr){
   return "";
 }
 
-// ---------- Undo (pila de inversas, máx 7) ----------
+// ---------- Lock toggle (persiste en localStorage) ----------
+// Default: mostrar lock (true). Para desactivarlo: localStorage["ops-lock-enabled"] = "0".
+function isLockEnabled(){
+  try { return localStorage.getItem(LS.lockEnabled) !== "0"; }
+  catch { return true; }
+}
+function setLockEnabled(enabled){
+  try { localStorage.setItem(LS.lockEnabled, enabled ? "1" : "0"); }
+  catch (e) { console.warn("localStorage no disponible:", e); }
+  state.lockEnabled = enabled;
+  updateLockToggle();
+}
+function updateLockToggle(){
+  const btn = document.getElementById("lock-toggle");
+  if (!btn) return;
+  if (state.lockEnabled){
+    btn.textContent = "🔒 Con clave";
+    btn.title = "Lock al iniciar: ACTIVO. Tocar para desactivar (la app abrirá sin pedir clave).";
+    btn.classList.remove("off");
+  } else {
+    btn.textContent = "🔓 Sin clave";
+    btn.title = "Lock al iniciar: DESACTIVADO. Tocar para volver a pedir clave al iniciar.";
+    btn.classList.add("off");
+  }
+}
+function applyLockState(){
+  const lock = document.getElementById("lock");
+  const app  = document.getElementById("app");
+  if (state.lockEnabled && !state.unlocked){
+    // Mostrar lock, ocultar app
+    document.body.classList.add("locked");
+    lock.hidden = false;
+    app.hidden = true;
+  } else {
+    // Lock desactivado o ya tipeado: mostrar app, ocultar lock
+    document.body.classList.remove("locked");
+    lock.hidden = true;
+    app.hidden = false;
+  }
+}
 function pushUndo(entry){
   state.undo.push(entry);
   if (state.undo.length > UNDO_LIMIT) state.undo.shift();
@@ -1100,6 +1142,21 @@ function bind(){
   // Admin toggle
   document.getElementById("admin").addEventListener("click", toggleAdmin);
 
+  // Lock toggle (persiste en localStorage)
+  document.getElementById("lock-toggle").addEventListener("click", () => {
+    const next = !state.lockEnabled;
+    setLockEnabled(next);
+    applyLockState();
+    if (next){
+      // Re-activó: el lock se verá en el próximo refresh. Acá la app sigue
+      // desbloqueada esta sesión (no forzamos lock inmediato — sería invasivo).
+      toast("🔒 Clave activada · próxima carga la pide", "ok");
+    } else {
+      // Desactivó: la app entra directo en el próximo refresh.
+      toast("🔓 Clave desactivada · próxima carga entra directo", "warn");
+    }
+  });
+
   // Nuevo arriendo
   document.getElementById("add").addEventListener("click", () => {
     if (!state.admin){ alert("Activa el modo admin primero (botón 🔒 Admin)."); return; }
@@ -1169,11 +1226,25 @@ function move(delta){
   try{
     const t = today();
     state.view = { y: t.y, m: t.m };
+
+    // Cargar setting de lock ANTES de tocar el DOM (sincrónico).
+    state.lockEnabled = isLockEnabled();
+
     bind();
     await initStore();
     await load();
-    setupLock();
+
+    // Aplicar estado del lock: si está habilitado, mostrarlo; si no, mostrar app directo.
+    // El toggle en el footer también llama applyLockState al cambiar.
+    applyLockState();
+    updateLockToggle();
     updateAdminUI();
+
+    // setupLock SIEMPRE se llama (setea listeners en los inputs).
+    // Si el lock está hidden, los listeners no hacen nada visible, pero quedan
+    // listos por si el usuario re-activa el lock + refresh.
+    setupLock();
+
     document.title += "  ·  v" + VERSION;
   }catch(err){
     console.error("Init error:", err);
