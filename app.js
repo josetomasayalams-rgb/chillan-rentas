@@ -39,7 +39,7 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "14";
+const VERSION = "15";
 const MONTHS  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -1065,68 +1065,125 @@ function updateAdminUI(){
   document.body.classList.toggle("admin-mode", state.admin);
 }
 
-// ---------- Lock (idéntico al calendario familiar) ----------
+// ---------- Lock ----------
+// UX: tap en la primera casilla + tipear. Cada dígito avanza solo al
+// siguiente input. Al 4° dígito se valida automático (entra o muestra
+// error). Backspace borra y va para atrás. Enter valida. Paste reparte
+// los dígitos en las 4 casillas.
+//
+// Usamos `keydown` como handler primario (más confiable en mobile que
+// `input`) y `input`/`paste` como fallback para paste y entrada rápida.
 function setupLock(){
   const lock = document.getElementById("lock");
   const pins = [...document.querySelectorAll(".lock-pin")];
   const err  = document.getElementById("lock-err");
   if (!lock || pins.length !== 4) return;
 
-  pins[0].focus();
-
   function getCode(){ return pins.map(p => p.value).join(""); }
+  function setPin(i, val){
+    if (i < 0 || i >= pins.length) return;
+    pins[i].value = val;
+    pins[i].classList.toggle("filled", val !== "");
+  }
+  function focusPin(i){
+    if (i < 0 || i >= pins.length) return;
+    setTimeout(() => pins[i].focus(), 0);
+  }
   function clearPins(){
     pins.forEach(p => { p.value = ""; p.classList.remove("filled","wrong"); });
-    pins[0].focus();
+    focusPin(0);
+  }
+  function distributeDigits(digitStr){
+    const digits = digitStr.replace(/\D/g, "").split("").slice(0, pins.length);
+    pins.forEach(p => { p.value = ""; p.classList.remove("filled"); });
+    for (let j = 0; j < digits.length; j++) setPin(j, digits[j]);
+    const lastIdx = Math.min(digits.length, pins.length) - 1;
+    if (lastIdx >= 0) focusPin(lastIdx);
+    return digits.length;
   }
   function fail(msg){
     err.textContent = msg;
+    lock.classList.add("shake");
     pins.forEach(p => p.classList.add("wrong"));
     setTimeout(() => {
+      lock.classList.remove("shake");
       pins.forEach(p => p.classList.remove("wrong"));
       clearPins();
-    }, 550);
+    }, 800);
+  }
+  function check(){
+    const code = getCode();
+    if (code.length < pins.length) return;
+    if (code === CONFIG.opsPin){
+      success();
+    } else {
+      fail("Clave incorrecta");
+    }
   }
   function success(){
     lock.classList.add("unlocking");
     document.body.classList.remove("locked");
-    state.unlocked = true;     // marca de sesión: ya tipeó la clave
+    state.unlocked = true;
     setTimeout(() => {
       lock.hidden = true;
       err.textContent = "";
     }, 600);
   }
 
+  // Focus inicial con un pequeño delay (necesario en mobile)
+  setTimeout(() => pins[0].focus(), 100);
+
   pins.forEach((pin, i) => {
-    pin.addEventListener("input", () => {
-      pin.value = pin.value.replace(/\D/g, "").slice(0, 1);
-      pin.classList.toggle("filled", pin.value.length === 1);
-      if (pin.value && i < pins.length - 1) pins[i + 1].focus();
-      if (i === pins.length - 1 && getCode().length === pins.length){
-        if (getCode() === CONFIG.opsPin) success();
-        else fail("Clave incorrecta");
+    // PRIMARY: keydown — captura cada dígito tipeado, más confiable en mobile
+    pin.addEventListener("keydown", (e) => {
+      if (e.key === "Backspace"){
+        e.preventDefault();
+        if (pin.value){
+          setPin(i, "");
+        } else if (i > 0){
+          setPin(i - 1, "");
+          focusPin(i - 1);
+        }
+      } else if (e.key === "ArrowLeft" && i > 0){
+        focusPin(i - 1);
+        e.preventDefault();
+      } else if (e.key === "ArrowRight" && i < pins.length - 1){
+        focusPin(i + 1);
+        e.preventDefault();
+      } else if (e.key === "Enter"){
+        e.preventDefault();
+        check();
+      } else if (/^\d$/.test(e.key)){
+        // Dígito tipeado: set, advance, check si es el último
+        e.preventDefault();
+        setPin(i, e.key);
+        if (i < pins.length - 1){
+          focusPin(i + 1);
+        } else {
+          check();   // validar inmediatamente
+        }
       }
     });
-    pin.addEventListener("keydown", e => {
-      if (e.key === "Backspace" && !pin.value && i > 0){
-        pins[i - 1].focus();
-        pins[i - 1].value = "";
-        pins[i - 1].classList.remove("filled");
+
+    // FALLBACK: input — para paste rápido o entrada programática
+    pin.addEventListener("input", (e) => {
+      const raw = e.target.value;
+      const digitCount = raw.replace(/\D/g, "").length;
+      if (digitCount > 1){
+        // Múltiples dígitos (paste o entrada rápida): repartir
+        const n = distributeDigits(raw);
+        if (n >= pins.length) check();
       }
-      if (e.key === "ArrowLeft"  && i > 0)               { e.preventDefault(); pins[i - 1].focus(); }
-      if (e.key === "ArrowRight" && i < pins.length - 1)  { e.preventDefault(); pins[i + 1].focus(); }
+      // Si es 1 dígito, el keydown ya lo manejó. No hacer nada acá
+      // para evitar doble-advance.
     });
-    pin.addEventListener("paste", e => {
+
+    // FALLBACK: paste explícito
+    pin.addEventListener("paste", (e) => {
       e.preventDefault();
       const text = (e.clipboardData || window.clipboardData).getData("text");
-      const digits = text.replace(/\D/g, "").split("").slice(0, pins.length);
-      digits.forEach((d, j) => { pins[j].value = d; pins[j].classList.add("filled"); });
-      const last = Math.min(digits.length, pins.length) - 1;
-      pins[Math.max(0, last)].focus();
-      if (digits.length === pins.length){
-        if (digits.join("") === CONFIG.opsPin) success();
-        else fail("Clave incorrecta");
-      }
+      const n = distributeDigits(text);
+      if (n >= pins.length) check();
     });
   });
 }
