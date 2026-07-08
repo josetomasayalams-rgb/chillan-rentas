@@ -449,6 +449,10 @@ body.admin-mode .app{ box-shadow:0 0 0 2px #f59e0b, var(--shadow); }
 .toast-btn:active{ transform:scale(.96); }
 .toast-btn.is-wa{ background:rgba(37,211,102,.85); border-color:rgba(255,255,255,.5); }
 .toast-btn.is-wa:hover{ background:rgba(37,211,102,1); }
+.toast-link{
+  display:inline-block; font-size:14px; font-weight:600; color:#fff;
+  text-decoration:underline; padding:6px 0;
+}
 
 /* ---------- Lock screen ---------- */
 body.locked{ overflow:hidden; }

@@ -43,7 +43,7 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "18";
+const VERSION = "19";
 const MONTHS  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -842,18 +842,12 @@ function openPopover(r, anchor){
 // El admin puede editar el mensaje en WhatsApp antes de enviar.
 // Si el número no está configurado, muestra un toast y no abre nada.
 function buildWhatsAppMessage(r){
-  const lines = [
-    "Hola Beatriz! Te aviso de un nuevo arriendo:",
+  return [
+    "Hola Beatriz, espero que te encuentres bien, te aviso de un nuevo arriendo.",
     "",
     `• Llegada: ${prettyShort(r.checkin_date)} · 16:00`,
     `• Salida: ${prettyShort(r.checkout_date)} · 12:00`,
-    `• Fuente: ${sourceMeta(r.source).name}`,
-  ];
-  if (r.guest_name) lines.push(`• Huésped: ${r.guest_name}`);
-  if (r.reference) lines.push(`• Referencia: ${r.reference}`);
-  if (r.notes)     lines.push(`• Notas: ${r.notes}`);
-  lines.push("", "¡Gracias!");
-  return lines.join("\n");
+  ].join("\n");
 }
 
 function openWhatsApp(rental){
@@ -865,9 +859,39 @@ function openWhatsApp(rental){
   }
   const msg = buildWhatsAppMessage(rental);
   const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
-  window.open(url, "_blank", "noopener");
+
+  // Intentar abrir popup. Si el browser lo bloquea, mostrar fallback con
+  // link clickeable (muchos browsers bloquean popups en iframes / mobile).
+  const win = window.open(url, "_blank", "noopener");
   haptic([10, 20, 10]);
-  toast("📱 Abriendo WhatsApp…", "ok");
+
+  if (!win || win.closed){
+    // Popup bloqueado. Mostrar toast con link de fallback.
+    const fallback = document.createElement("div");
+    fallback.className = "toast-msg";
+    fallback.textContent = "Tu navegador bloqueó la ventana emergente.";
+    const link = document.createElement("a");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.className = "toast-link";
+    link.textContent = "👉 Tocá acá para abrir WhatsApp";
+    toast("⚠ Popup bloqueado", "warn", 10000);
+    // Reemplazar el contenido del toast con fallback clickeable
+    setTimeout(() => {
+      const t = document.getElementById("toast");
+      if (!t) return;
+      t.innerHTML = "";
+      t.appendChild(fallback);
+      t.appendChild(link);
+      t.classList.add("has-actions");
+      // Auto-dismiss más largo para dar tiempo a hacer clic
+      clearTimeout(t._h);
+      t._h = setTimeout(hideToast, 15000);
+    }, 100);
+  } else {
+    toast("📱 Abriendo WhatsApp en nueva pestaña…", "ok", 3000);
+  }
 }
 
 function positionPopover(pop, anchor){
@@ -1122,7 +1146,7 @@ function toast(msg, kind="ok", ms=1800, actions=null){
     t.appendChild(actionsEl);
     t.classList.add("show");
     clearTimeout(t._h);
-    t._h = setTimeout(hideToast, ms || 6000);
+    t._h = setTimeout(hideToast, ms || 10000);  // 10s por default para actions
   } else {
     // Toast simple
     t.textContent = msg;
