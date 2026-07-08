@@ -397,6 +397,14 @@ body.admin-mode .app{ box-shadow:0 0 0 2px #f59e0b, var(--shadow); }
 }
 .popover .pbtn:active{ transform:scale(.97); }
 .popover .pbtn.danger{ background:rgba(239,68,68,.18); border-color:rgba(239,68,68,.4); color:#ffd6d6; }
+/* Botón de WhatsApp (verde, el más visible en el popover del admin) */
+.popover .pbtn.wa-btn{
+  background:rgba(37,211,102,.22);
+  border-color:rgba(37,211,102,.5);
+  color:#b8f5cf;
+  font-weight:600;
+}
+.popover .pbtn.wa-btn:hover{ background:rgba(37,211,102,.32); }
 
 @keyframes fade{ from{opacity:0} to{opacity:1} }
 @keyframes pop{ from{opacity:0; transform:translateY(8px) scale(.98)} to{opacity:1; transform:none} }
@@ -417,6 +425,30 @@ body.admin-mode .app{ box-shadow:0 0 0 2px #f59e0b, var(--shadow); }
 #toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
 #toast.is-warn{ background:rgba(245,158,11,.95); }
 #toast.is-err{ background:rgba(239,68,68,.95); }
+/* Action toast: más alto, con botones */
+#toast.has-actions{
+  width:auto; max-width:min(420px, calc(100vw - 24px));
+  padding:12px 16px;
+  text-align:left;
+  background:linear-gradient(180deg, rgba(16,185,129,.95), rgba(5,150,105,.95));
+  display:flex; flex-direction:column; gap:10px; align-items:stretch;
+}
+#toast.has-actions.is-warn{ background:linear-gradient(180deg, rgba(245,158,11,.95), rgba(217,119,6,.95)); }
+#toast.has-actions.is-err{  background:linear-gradient(180deg, rgba(239,68,68,.95), rgba(220,38,38,.95)); }
+.toast-msg{ font-size:15px; font-weight:600; }
+.toast-actions{ display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; }
+.toast-btn{
+  font:inherit; font-size:13px; font-weight:600;
+  padding:7px 12px; border-radius:999px; cursor:pointer;
+  background:rgba(255,255,255,.18);
+  border:1px solid rgba(255,255,255,.3);
+  color:#fff;
+  transition:background .15s ease, transform .08s ease;
+}
+.toast-btn:hover{ background:rgba(255,255,255,.3); }
+.toast-btn:active{ transform:scale(.96); }
+.toast-btn.is-wa{ background:rgba(37,211,102,.85); border-color:rgba(255,255,255,.5); }
+.toast-btn.is-wa:hover{ background:rgba(37,211,102,1); }
 
 /* ---------- Lock screen ---------- */
 body.locked{ overflow:hidden; }

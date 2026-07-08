@@ -13,6 +13,10 @@ const CONFIG = {
   supabaseUrl:    "https://uimqusoylxpyljbfqumm.supabase.co",
   supabaseAnonKey:"sb_publishable_B_MIa8pWGFjzLhdzLoi61A_kffCRo8_",
 
+  // WhatsApp de Beatriz (formato internacional sin '+', ej: '56957333361').
+  // Si está vacío, el botón de WhatsApp muestra un toast y no abre nada.
+  beatrizWhatsApp: "56957333361",
+
   // PIN de entrada — el mismo para todos.
   // Cambiar antes de desplegar. Distinto de "9014" del calendario familiar.
   opsPin:     "0000",
@@ -39,7 +43,7 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "17";
+const VERSION = "18";
 const MONTHS  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -47,6 +51,7 @@ const LS = {
   rentals:     "ops-rentals",
   cleanings:   "ops-cleanings",
   comments:    "ops-comments",
+  lockEnabled: "ops-lock-enabled",     // "1" = lock al iniciar; "0" = sin clave
 };
 
 // ---------- Estado ----------
@@ -67,6 +72,8 @@ const state = {
   updatedAt: null,
   modal: null,          // { kind: "rental"|"confirm", rental?, resolver? }
   undo: [],             // pila de inversas (máx 7) para el botón Deshacer
+  lockEnabled: true,    // mostrar lock al iniciar (persiste en localStorage)
+  unlocked: false,      // sesión: true después de tipear la clave correcta
 };
 const UNDO_LIMIT = 7;
 
@@ -103,6 +110,52 @@ function addDays(iso, n){
   const { y, m, d } = parseISO(iso);
   const dt = new Date(y, m, d + n);
   return isoOf(dt.getFullYear(), dt.getMonth(), dt.getDate());
+}
+
+// Horarios fijos por convención. La app no los guarda en la DB; se muestran
+// siempre igual en los bordes de las barras. Si en el futuro hay que hacerlos
+// editables por rental, se agregan campos a la tabla `rentals`.
+const CHECKIN_TIME  = "16:00";
+const CHECKOUT_TIME = "12:00";
+
+// Feedback háptico (vibración corta). En navegadores sin soporte es no-op.
+function haptic(pattern=12){
+  if (navigator.vibrate) try { navigator.vibrate(pattern); } catch {}
+}
+
+// ---------- Lock toggle (solo admin, persiste en localStorage) ----------
+function isLockEnabled(){
+  try { return localStorage.getItem(LS.lockEnabled) !== "0"; }
+  catch { return true; }
+}
+function setLockEnabled(enabled){
+  try { localStorage.setItem(LS.lockEnabled, enabled ? "1" : "0"); }
+  catch (e) { console.warn("localStorage no disponible:", e); }
+  state.lockEnabled = enabled;
+  updateLockToggle();
+}
+function updateLockToggle(){
+  const btn = document.getElementById("lock-toggle");
+  if (!btn) return;
+  if (state.lockEnabled){
+    btn.textContent = "🔒 Con clave";
+    btn.title = "Lock al iniciar: ACTIVO. Tocar para desactivar.";
+    btn.classList.remove("off");
+  } else {
+    btn.textContent = "🔓 Sin clave";
+    btn.title = "Lock al iniciar: DESACTIVADO. Tocar para activar.";
+    btn.classList.add("off");
+  }
+}
+function applyLockState(){
+  const lock = document.getElementById("lock");
+  if (state.lockEnabled && !state.unlocked){
+    document.body.classList.add("locked");
+    lock.hidden = false;
+  } else {
+    document.body.classList.remove("locked");
+    lock.hidden = true;
+  }
 }
 
 // UUID v4 con fallback
@@ -536,7 +589,15 @@ async function confirmBrush(){
     });
     b.start = null; b.end = null;
     render();
-    toast("✓ Arriendo creado");
+    // En admin: ofrecer enviar a Beatriz directo desde el toast
+    if (state.admin && CONFIG.beatrizWhatsApp){
+      toast("✓ Arriendo creado", "ok", 6000, [
+        { label: "📱 Enviar a Beatriz", action: () => openWhatsApp(rental) },
+        { label: "OK", action: null },
+      ]);
+    } else {
+      toast("✓ Arriendo creado");
+    }
   }catch(err){
     // Si el schema se cayó mid-session, demote y reintenta.
     const cat = categorizeError(err);
@@ -676,9 +737,12 @@ function renderGrid(){
       const seg = document.createElement("div");
       seg.className = cls;
       seg.style.background = meta.color;
-      seg.textContent = (isStart || isEnd) ? meta.name : "";
+      // Solo el horario en los bordes (sin nombre de fuente, por convención del usuario).
+      // Single-day rental: muestra la hora de llegada.
+      const label = isStart ? CHECKIN_TIME : isEnd ? CHECKOUT_TIME : "";
+      seg.textContent = label;
       seg.dataset.id = r.id;
-      seg.title = `${meta.name} · ${r.checkin_date} → ${r.checkout_date}${r.guest_name ? " · " + r.guest_name : ""}`;
+      seg.title = `${meta.name} · ${r.checkin_date} ${CHECKIN_TIME} → ${r.checkout_date} ${CHECKOUT_TIME}${r.guest_name ? " · " + r.guest_name : ""}`;
       seg.addEventListener("click", e => { e.stopPropagation(); openPopover(r, seg); });
       segs.appendChild(seg);
     });
@@ -730,8 +794,11 @@ function openPopover(r, anchor){
     ? `<div class="prow"><span>Tarea</span><b>${escapeHtml(prettyShort(c0.scheduled_date))} · ${escapeHtml(c0.status)}</b></div>`
     : "";
 
+  // Acciones solo visibles en admin. El botón de WhatsApp es el más visible
+  // (verde) y va primero porque es la acción más común al crear.
   const adminActions = state.admin ? `
     <div class="pactions">
+      <button class="pbtn wa-btn" data-act="whatsapp">📱 Enviar a Beatriz</button>
       <button class="pbtn" data-act="edit">Editar</button>
       <button class="pbtn danger" data-act="cancel">Cancelar arriendo</button>
     </div>
@@ -742,8 +809,8 @@ function openPopover(r, anchor){
       <span class="dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${meta.color};margin-right:6px"></span>
       ${escapeHtml(meta.name)}${r.reference ? ` · ${escapeHtml(r.reference)}` : ""}
     </div>
-    <div class="prow"><span>Llegada</span><b>${escapeHtml(prettyShort(r.checkin_date))}</b></div>
-    <div class="prow"><span>Salida</span><b>${escapeHtml(prettyShort(r.checkout_date))}</b></div>
+    <div class="prow"><span>Llegada</span><b>${escapeHtml(prettyShort(r.checkin_date))} 16:00</b></div>
+    <div class="prow"><span>Salida</span><b>${escapeHtml(prettyShort(r.checkout_date))} 12:00</b></div>
     ${r.guest_name ? `<div class="prow"><span>Huesped</span><b>${escapeHtml(r.guest_name)}</b></div>` : ""}
     ${cleaningLine}
     ${r.notes ? `<div class="prow"><span>Nota</span><b>${escapeHtml(r.notes)}</b></div>` : ""}
@@ -762,10 +829,45 @@ function openPopover(r, anchor){
         } else if (act === "cancel"){
           pop.hidden = true;
           confirmCancelRental(r);
+        } else if (act === "whatsapp"){
+          openWhatsApp(r);
         }
       });
     });
   }
+}
+
+// ---------- WhatsApp a Beatriz (solo en admin mode) ----------
+// Construye el mensaje pre-rellenado y abre wa.me en nueva pestaña.
+// El admin puede editar el mensaje en WhatsApp antes de enviar.
+// Si el número no está configurado, muestra un toast y no abre nada.
+function buildWhatsAppMessage(r){
+  const lines = [
+    "Hola Beatriz! Te aviso de un nuevo arriendo:",
+    "",
+    `• Llegada: ${prettyShort(r.checkin_date)} · 16:00`,
+    `• Salida: ${prettyShort(r.checkout_date)} · 12:00`,
+    `• Fuente: ${sourceMeta(r.source).name}`,
+  ];
+  if (r.guest_name) lines.push(`• Huésped: ${r.guest_name}`);
+  if (r.reference) lines.push(`• Referencia: ${r.reference}`);
+  if (r.notes)     lines.push(`• Notas: ${r.notes}`);
+  lines.push("", "¡Gracias!");
+  return lines.join("\n");
+}
+
+function openWhatsApp(rental){
+  if (!state.admin) return;   // guard: aunque alguien fuerce el botón
+  const phone = (CONFIG.beatrizWhatsApp || "").replace(/[^\d]/g, "");
+  if (!phone){
+    toast("Configurá el número de Beatriz en app.js (CONFIG.beatrizWhatsApp)", "warn");
+    return;
+  }
+  const msg = buildWhatsAppMessage(rental);
+  const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+  window.open(url, "_blank", "noopener");
+  haptic([10, 20, 10]);
+  toast("📱 Abriendo WhatsApp…", "ok");
 }
 
 function positionPopover(pop, anchor){
@@ -983,7 +1085,7 @@ async function confirmCancelRental(rental){
 }
 
 // ---------- Toast ----------
-function toast(msg, kind="ok", ms=1800){
+function toast(msg, kind="ok", ms=1800, actions=null){
   let t = document.getElementById("toast");
   if (!t){
     t = document.createElement("div");
@@ -995,10 +1097,46 @@ function toast(msg, kind="ok", ms=1800){
   t.className = "";
   if (kind === "warn") t.classList.add("is-warn");
   if (kind === "err")  t.classList.add("is-err");
-  t.textContent = msg;
-  t.classList.add("show");
+  t.innerHTML = "";
+
+  if (actions && actions.length){
+    // Action toast: mensaje + botones. Auto-dismiss más largo (6s) para dar
+    // tiempo a leer y actuar.
+    t.classList.add("has-actions");
+    const msgEl = document.createElement("div");
+    msgEl.className = "toast-msg";
+    msgEl.textContent = msg;
+    t.appendChild(msgEl);
+    const actionsEl = document.createElement("div");
+    actionsEl.className = "toast-actions";
+    actions.forEach(a => {
+      const btn = document.createElement("button");
+      btn.className = "toast-btn" + (a.kind ? " is-" + a.kind : "");
+      btn.textContent = a.label;
+      btn.addEventListener("click", () => {
+        if (a.action) a.action();
+        hideToast();
+      });
+      actionsEl.appendChild(btn);
+    });
+    t.appendChild(actionsEl);
+    t.classList.add("show");
+    clearTimeout(t._h);
+    t._h = setTimeout(hideToast, ms || 6000);
+  } else {
+    // Toast simple
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(t._h);
+    t._h = setTimeout(() => t.classList.remove("show"), ms);
+  }
+}
+
+function hideToast(){
+  const t = document.getElementById("toast");
+  if (!t) return;
+  t.classList.remove("show");
   clearTimeout(t._h);
-  t._h = setTimeout(() => t.classList.remove("show"), ms);
 }
 
 // ---------- Modo admin (mismo patrón que el calendario familiar) ----------
@@ -1157,6 +1295,16 @@ function bind(){
   // Admin toggle
   document.getElementById("admin").addEventListener("click", toggleAdmin);
 
+  // Lock toggle (solo admin, persiste en localStorage)
+  document.getElementById("lock-toggle").addEventListener("click", () => {
+    if (!state.admin) return;
+    const next = !state.lockEnabled;
+    setLockEnabled(next);
+    applyLockState();
+    toast(next ? "🔒 Clave activada · próxima carga la pide" : "🔓 Clave desactivada · próxima carga entra directo",
+          next ? "ok" : "warn");
+  });
+
   // Lock toggle removido — el lock es siempre activo.
 
   // Nuevo arriendo
@@ -1228,9 +1376,12 @@ function move(delta){
   try{
     const t = today();
     state.view = { y: t.y, m: t.m };
+    state.lockEnabled = isLockEnabled();
     bind();
     await initStore();
     await load();
+    applyLockState();
+    updateLockToggle();
     setupLock();
     updateAdminUI();
     document.title += "  ·  v" + VERSION;
