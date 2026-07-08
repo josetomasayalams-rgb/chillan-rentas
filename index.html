@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1020">
+  <meta name="description" content="Operaciones · Departamento Chillán. Calendario de arriendos.">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Operaciones">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Operaciones · Chillán</title>
+
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="assets/icon-512.png">
+
+  <link rel="preload" as="image" href="assets/chillan-bg-mobile.jpg" fetchpriority="high" media="(max-width:900px)">
+
+  <link rel="stylesheet" href="styles.css?v=10">
+</head>
+<body class="locked">
+  <div class="bg-layer" aria-hidden="true"></div>
+
+  <!-- Lock screen (mismo PIN para todos) -->
+  <div id="lock" class="lock-overlay" role="dialog" aria-modal="true" aria-labelledby="lock-title">
+    <div class="lock-card glass">
+      <div class="lock-icon" aria-hidden="true">🔒</div>
+      <h2 id="lock-title">Departamento Chillán</h2>
+      <p class="lock-sub">Ingresa la clave</p>
+      <div class="lock-pins" id="lock-pins">
+        <input class="lock-pin" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="1" aria-label="Dígito 1">
+        <input class="lock-pin" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Dígito 2">
+        <input class="lock-pin" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Dígito 3">
+        <input class="lock-pin" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Dígito 4">
+      </div>
+      <p class="lock-err" id="lock-err" aria-live="polite"></p>
+    </div>
+  </div>
+
+  <main class="app glass">
+    <header class="topbar">
+      <div class="title">
+        <h1>Departamento Chillán</h1>
+        <p class="subtitle">Arriendos</p>
+      </div>
+      <nav class="nav">
+        <button id="prev" class="btn glass icon" aria-label="Mes anterior">‹</button>
+        <select id="month" class="glass" aria-label="Mes"></select>
+        <select id="year" class="glass" aria-label="Año"></select>
+        <button id="next" class="btn glass icon" aria-label="Mes siguiente">›</button>
+        <button id="today" class="btn glass">Hoy</button>
+        <button id="add" class="btn glass primary admin-only" title="Crear nuevo arriendo">+ Arriendo</button>
+      </nav>
+    </header>
+
+    <section class="legend glass-soft" id="legend" aria-label="Arriendo" hidden>
+      <span class="chip"><span class="dot" style="background:#6366F1"></span>Arriendo</span>
+    </section>
+
+    <div class="hint-bar glass-soft active" id="hint-bar">Toca un arriendo para ver detalles · toca el ticket de salida para marcar la tarea</div>
+
+    <div id="schema-banner" class="schema-banner glass-soft" hidden role="alert" aria-live="polite">
+      <span class="sb-icon" aria-hidden="true">⚠️</span>
+      <div class="sb-body">
+        <strong>Faltan tablas en Supabase</strong>
+        <p>La app está guardando los arriendos solo en este dispositivo. Para que vos y el equipo vean lo mismo, corré <code>schema.sql</code> en <strong>Supabase → SQL Editor</strong> y tocá Reintentar.</p>
+      </div>
+      <button class="sb-retry" id="sb-retry" type="button">Reintentar</button>
+    </div>
+
+    <section class="calendar">
+      <div class="weekdays" id="weekdays"></div>
+      <div class="grid" id="grid"></div>
+    </section>
+
+    <footer class="foot">
+      <span id="mode-badge" class="mode-badge"></span>
+      <button id="admin" class="btn glass admin-btn" title="Modo admin: crear / editar arriendos">🔒 Admin</button>
+    </footer>
+  </main>
+
+  <!-- Popover detalle arriendo (con acciones solo en modo admin) -->
+  <div class="popover glass" id="pop" hidden></div>
+
+  <!-- Brush bar (admin): aparece al seleccionar dos días -->
+  <div class="brush-bar glass" id="brush-bar" role="region" aria-label="Selección de arriendo">
+    <span class="bb-range"></span>
+    <button class="btn ghost" id="brush-cancel" type="button">Cancelar</button>
+    <button class="btn" id="brush-details" type="button" disabled>+ Detalles</button>
+    <button class="btn primary" id="brush-confirm" type="button" disabled>Confirmar</button>
+  </div>
+
+  <!-- Modal: nuevo / editar arriendo (solo visible en modo admin) -->
+  <div class="modal-overlay" id="rental-modal" hidden>
+    <div class="modal glass" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="rental-title" aria-describedby="rental-tip">
+      <h2 id="rental-title">Nuevo arriendo</h2>
+      <p class="modal-tip" id="rental-tip">Check-out 12:00 → se genera una tarea.</p>
+
+      <div class="row">
+        <label class="field">
+          <span class="lbl">Check-in</span>
+          <input type="date" id="r-checkin" class="glass">
+        </label>
+        <label class="field">
+          <span class="lbl">Check-out</span>
+          <input type="date" id="r-checkout" class="glass">
+        </label>
+      </div>
+
+      <button type="button" class="r-toggle-btn" id="r-toggle-details" aria-expanded="false" aria-controls="r-details">+ Agregar detalles (opcional)</button>
+
+      <div class="r-details" id="r-details" hidden>
+        <div class="row">
+          <label class="field">
+            <span class="lbl">Referencia <em>(opcional)</em></span>
+            <input type="text" id="r-reference" class="glass" placeholder="Ej: HM4X2K9P">
+          </label>
+          <label class="field">
+            <span class="lbl">Huesped <em>(opcional)</em></span>
+            <input type="text" id="r-guest" class="glass" placeholder="Ej: Familia Rojas">
+          </label>
+        </div>
+        <label class="field">
+          <span class="lbl">Nota <em>(opcional)</em></span>
+          <textarea id="r-notes" class="glass" rows="2" placeholder="Ej: dejan llaves en la cocina"></textarea>
+        </label>
+      </div>
+
+      <p class="hint" id="r-hint"></p>
+
+      <div class="modal-actions">
+        <button class="btn ghost" id="r-cancel" type="button">Cancelar</button>
+        <button class="btn primary" id="r-save" type="button">Guardar arriendo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: confirmar (genérico: cancelar arriendo, regenerar tarea, etc.) -->
+  <div class="modal-overlay" id="confirm-modal" hidden>
+    <div class="modal glass" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="c-title">
+      <h2 id="c-title">¿Confirmar?</h2>
+      <p class="modal-tip" id="c-tip"></p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="c-no" type="button">No</button>
+        <button class="btn primary" id="c-yes" type="button">Sí</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: ticket de tarea (marcar hecho / deshacer) -->
+  <div class="modal-overlay" id="ticket-modal" hidden>
+    <div class="modal glass" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="ticket-title" aria-describedby="ticket-tip">
+      <h2 id="ticket-title">Marcar tarea</h2>
+      <p class="modal-tip" id="ticket-tip"></p>
+      <label class="field" id="ticket-comment-field">
+        <span class="lbl">Comentario <em>(opcional)</em></span>
+        <textarea id="ticket-comment" rows="2" placeholder="Ej: dejé las llaves en la cocina"></textarea>
+      </label>
+      <div class="modal-actions">
+        <button class="btn ghost" id="ticket-cancel" type="button">Cancelar</button>
+        <button class="btn primary" id="ticket-confirm" type="button">Listo</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js?v=10" defer></script>
+</body>
+</html>
