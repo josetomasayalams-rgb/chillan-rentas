@@ -39,7 +39,7 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "15";
+const VERSION = "16";
 const MONTHS  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -1199,17 +1199,15 @@ function bind(){
   // Admin toggle
   document.getElementById("admin").addEventListener("click", toggleAdmin);
 
-  // Lock toggle (persiste en localStorage)
+  // Lock toggle (solo visible en admin, persiste en localStorage)
   document.getElementById("lock-toggle").addEventListener("click", () => {
+    if (!state.admin) return;   // guard: solo admin puede tocar
     const next = !state.lockEnabled;
     setLockEnabled(next);
     applyLockState();
     if (next){
-      // Re-activó: el lock se verá en el próximo refresh. Acá la app sigue
-      // desbloqueada esta sesión (no forzamos lock inmediato — sería invasivo).
       toast("🔒 Clave activada · próxima carga la pide", "ok");
     } else {
-      // Desactivó: la app entra directo en el próximo refresh.
       toast("🔓 Clave desactivada · próxima carga entra directo", "warn");
     }
   });
