@@ -1091,6 +1091,7 @@ function setupLock(){
   function success(){
     lock.classList.add("unlocking");
     document.body.classList.remove("locked");
+    state.unlocked = true;     // marca de sesión: ya tipeó la clave
     setTimeout(() => {
       lock.hidden = true;
       err.textContent = "";
