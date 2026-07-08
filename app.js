@@ -39,7 +39,7 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "12";
+const VERSION = "13";
 const MONTHS  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -66,7 +66,9 @@ const state = {
   tickHandle: null,
   updatedAt: null,
   modal: null,          // { kind: "rental"|"confirm", rental?, resolver? }
+  undo: [],             // pila de inversas (máx 7) para el botón Deshacer
 };
+const UNDO_LIMIT = 7;
 
 // ---------- Helpers ----------
 function pad(n){ return String(n).padStart(2,"0"); }
@@ -304,6 +306,7 @@ async function load(isRemotePush=false){
     state.loadError = cat.message;
   }
   render();
+  updateUndoBtn();
 }
 
 // Refresca el badge de modo cuando el store cambia de identidad.
@@ -395,7 +398,70 @@ function brushClass(dateStr){
   return "";
 }
 
-// ---------- Brush: selección de arriendo por clicks en celdas ----------
+// ---------- Undo (pila de inversas, máx 7) ----------
+function pushUndo(entry){
+  state.undo.push(entry);
+  if (state.undo.length > UNDO_LIMIT) state.undo.shift();
+  updateUndoBtn();
+}
+
+function updateUndoBtn(){
+  const btn = document.getElementById("undo");
+  if (!btn) return;
+  const n = state.undo.length;
+  btn.disabled = n === 0;
+  btn.textContent = n > 0 ? `↩ Deshacer (${n})` : "↩ Deshacer";
+  btn.title = n > 0
+    ? `Deshacer: ${state.undo[n-1].label || "última acción"}`
+    : "No hay nada que deshacer";
+}
+
+async function doUndo(){
+  const entry = state.undo.pop();
+  if (!entry) return;
+  const btn = document.getElementById("undo");
+  btn.disabled = true;
+  try{
+    if (entry.op === "create"){
+      // La acción fue CREAR un arriendo → deshacer borrándolo
+      for (const r of entry.rentals || []){
+        await state.store.removeRental(r.id);
+      }
+      for (const c of entry.cleanings || []){
+        if (c && c.id) await state.store.removeCleaning(c.id);
+      }
+    } else if (entry.op === "update"){
+      // La acción fue EDITAR → restaurar estado anterior del rental.
+      // Si había cleaning previa, restaurarla; si el edit generó una nueva, borrarla.
+      if (entry.prevRental){
+        await state.store.upsertRental(entry.prevRental);
+      }
+      if (entry.prevCleaning){
+        await state.store.upsertCleaning(entry.prevCleaning);
+      } else if (entry.newCleaningId){
+        await state.store.removeCleaning(entry.newCleaningId);
+      }
+    } else if (entry.op === "cancel"){
+      // La acción fue CANCELAR → re-activar rental y cleanings
+      if (entry.rental){
+        await state.store.upsertRental({ ...entry.rental, status: "scheduled" });
+      }
+      for (const c of entry.cleanings || []){
+        const prev = c._prevStatus || "pending";
+        const { _prevStatus, ...clean } = c;   // strip helper field
+        await state.store.upsertCleaning({ ...clean, status: prev });
+      }
+    }
+    await load();
+    toast("✓ Deshecho");
+  }catch(err){
+    // Devolver la entry a la pila si falló
+    state.undo.push(entry);
+    toast("No se pudo deshacer: " + (err.message || err), "err");
+  } finally {
+    updateUndoBtn();
+  }
+}
 function onAdminCellClick(dateStr){
   const b = state.brush;
   if (!b.start || (b.start && b.end)){
@@ -460,6 +526,13 @@ async function confirmBrush(){
       status: "pending",
       confirmed_at: null, done_at: null,
       created_at: new Date().toISOString(),
+    });
+    // Push undo: deshacer = borrar el rental (cascade borra la cleaning)
+    pushUndo({
+      op: "create",
+      rentals: [rental],
+      cleanings: [state.cleanings.find(c => c.rental_id === rental.id)].filter(Boolean),
+      label: `Arriendo ${rental.checkin_date} → ${rental.checkout_date}`,
     });
     b.start = null; b.end = null;
     render();
@@ -789,6 +862,18 @@ async function saveRentalForm(){
       const r = { id: uuid(), ...data, created_at: new Date().toISOString() };
       await state.store.upsertRental(r);
       rentalId = r.id;
+    }
+
+    // Push undo (solo en edit, donde podemos restaurar el estado previo)
+    if (isEdit){
+      const prevCleaning = state.cleanings.find(c => c.rental_id === rentalId);
+      pushUndo({
+        op: "update",
+        prevRental: { ...m.rental },
+        prevCleaning: prevCleaning ? { ...prevCleaning } : null,
+        newCleaningId: null,   // se setea abajo si se regenera
+        label: `Editar arriendo`,
+      });
     }
 
     // Generar / regenerar cleaning
