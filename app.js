@@ -43,7 +43,7 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "20";
+const VERSION = "21";
 const MONTHS  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -360,6 +360,7 @@ async function load(isRemotePush=false){
   }
   render();
   updateUndoBtn();
+  updateWaLastBtn();   // habilita/deshabilita el botón "📱 Último" según haya rentals
 }
 
 // Refresca el badge de modo cuando el store cambia de identidad.
@@ -918,6 +919,90 @@ function positionPopover(pop, anchor){
   pop.style.top  = Math.max(8, top) + "px";
 }
 
+// Devuelve el rental creado más recientemente (por created_at). Null si no hay.
+function lastRental(){
+  if (!state.rentals.length) return null;
+  return [...state.rentals].sort((a,b) =>
+    (b.created_at || "").localeCompare(a.created_at || "")
+  )[0];
+}
+
+// Actualiza el estado del botón "📱 Último" (admin-only).
+function updateWaLastBtn(){
+  const btn = document.getElementById("wa-last");
+  if (!btn) return;
+  const last = lastRental();
+  if (last){
+    btn.disabled = false;
+    btn.title = `Enviar a Beatriz: ${prettyShort(last.checkin_date)} → ${prettyShort(last.checkout_date)} (16:00 → 12:00)`;
+  } else {
+    btn.disabled = true;
+    btn.title = "No hay arriendos todavía. Creá uno con + Arriendo.";
+  }
+}
+
+// ---------- Modal: lista de arriendos (admin only) ----------
+// Vista completa para editar / cancelar / avisar cualquier arriendo.
+function openRentalsList(){
+  const modal = document.getElementById("list-modal");
+  const list  = document.getElementById("rentals-list");
+  // Orden: más recientes primero
+  const rentals = [...state.rentals].sort((a,b) =>
+    (b.created_at || "").localeCompare(a.created_at || "")
+  );
+  if (!rentals.length){
+    list.innerHTML = `<p class="empty-row">No hay arriendos. Creá uno con <strong>+ Arriendo</strong> en la nav.</p>`;
+  } else {
+    list.innerHTML = rentals.map(r => {
+      const meta = sourceMeta(r.source);
+      const cs = state.cleanings.filter(c => c.rental_id === r.id);
+      const c0 = cs[0];
+      const statusBadge = r.status === "cancelled"
+        ? `<span class="rl-badge cancelled">cancelado</span>`
+        : c0
+          ? `<span class="rl-badge ${c0.status}">${c0.status}</span>`
+          : "";
+      return `
+        <div class="rental-row${r.status === "cancelled" ? " is-cancelled" : ""}" data-id="${r.id}">
+          <div class="rl-info">
+            <span class="rl-dot" style="background:${meta.color}"></span>
+            <span class="rl-dates"><strong>${escapeHtml(prettyShort(r.checkin_date))}</strong> 16:00 → <strong>${escapeHtml(prettyShort(r.checkout_date))}</strong> 12:00</span>
+            ${r.guest_name ? `<span class="rl-meta">· ${escapeHtml(r.guest_name)}</span>` : ""}
+            ${r.reference ? `<span class="rl-meta">· ${escapeHtml(r.reference)}</span>` : ""}
+            ${statusBadge}
+          </div>
+          <div class="rl-actions">
+            <button class="pbtn" data-act="edit" data-id="${r.id}" title="Editar">✏️ Editar</button>
+            <button class="pbtn wa-btn" data-act="whatsapp" data-id="${r.id}" title="Enviar a Beatriz por WhatsApp">📱 Avisar</button>
+            ${r.status !== "cancelled" ? `<button class="pbtn danger" data-act="cancel" data-id="${r.id}" title="Cancelar arriendo">Cancelar</button>` : ""}
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+  // Wire up actions
+  list.querySelectorAll(".rl-actions button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const r = state.rentals.find(x => x.id === btn.dataset.id);
+      if (!r) return;
+      const act = btn.dataset.act;
+      if (act === "edit"){
+        modal.hidden = true;
+        openRentalForm(r);
+      } else if (act === "whatsapp"){
+        openWhatsApp(r);
+      } else if (act === "cancel"){
+        modal.hidden = true;
+        confirmCancelRental(r);
+      }
+    });
+  });
+  modal.hidden = false;
+}
+function closeRentalsList(){
+  document.getElementById("list-modal").hidden = true;
+}
+
 // ---------- Modal: nuevo / editar arriendo ----------
 function openRentalForm(rental=null, checkin=null, checkout=null){
   if (!state.admin) return;   // guard: solo admin
@@ -1361,6 +1446,20 @@ function bind(){
     confirmBrush(true);
   });
 
+  // WhatsApp del último arriendo creado (admin only)
+  document.getElementById("wa-last").addEventListener("click", () => {
+    if (!state.admin) return;
+    const r = lastRental();
+    if (r) openWhatsApp(r);
+  });
+
+  // Lista de arriendos (admin only)
+  document.getElementById("list").addEventListener("click", openRentalsList);
+  document.getElementById("list-close").addEventListener("click", closeRentalsList);
+  document.getElementById("list-modal").addEventListener("click", e => {
+    if (e.target.id === "list-modal") closeRentalsList();
+  });
+
   // Banner de schema faltante
   document.getElementById("sb-retry").addEventListener("click", retryConnection);
 
@@ -1397,7 +1496,8 @@ function bind(){
   // Escape
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
-    if (!document.getElementById("confirm-modal").hidden) closeConfirmModal(false);
+    if (!document.getElementById("list-modal").hidden) closeRentalsList();
+    else if (!document.getElementById("confirm-modal").hidden) closeConfirmModal(false);
     else if (!document.getElementById("rental-modal").hidden) closeRentalForm();
     else { const p = document.getElementById("pop"); if (p) p.hidden = true; }
   });

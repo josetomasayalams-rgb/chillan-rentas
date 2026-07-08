@@ -337,6 +337,7 @@ body.admin-mode .app{ box-shadow:0 0 0 2px #f59e0b, var(--shadow); }
   padding:16px; animation:fade .15s ease;
 }
 .modal{ width:min(440px,100%); padding:22px; animation:pop .16s ease; }
+.modal-wide{ width:min(560px,100%); max-height:80dvh; display:flex; flex-direction:column; }
 .modal h2{ margin:0 0 16px; font-size:20px; }
 .field{ display:block; margin-bottom:14px; }
 .field .lbl{ display:block; font-size:12px; color:var(--text-dim); margin-bottom:6px; font-weight:600; }
@@ -453,6 +454,54 @@ body.admin-mode .app{ box-shadow:0 0 0 2px #f59e0b, var(--shadow); }
   display:inline-block; font-size:14px; font-weight:600; color:#fff;
   text-decoration:underline; padding:6px 0;
 }
+
+/* Lista de arriendos (admin only) — vista completa para gestionar */
+.rentals-list{
+  display:flex; flex-direction:column; gap:8px;
+  max-height:55dvh; overflow-y:auto;
+  margin:0 0 12px;
+  padding-right:4px;
+}
+.rental-row{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding:10px 12px; border-radius:10px;
+  background:rgba(255,255,255,.05);
+  border:1px solid var(--glass-brd-soft);
+}
+.rental-row.is-cancelled{ opacity:.5; }
+.rl-info{
+  display:flex; align-items:center; gap:8px; flex:1 1 auto; min-width:0;
+  font-size:13px; color:var(--text);
+  flex-wrap:wrap;
+}
+.rl-dot{ width:10px; height:10px; border-radius:50%; flex:0 0 auto; box-shadow:0 0 0 1px rgba(255,255,255,.25); }
+.rl-dates{ white-space:nowrap; }
+.rl-dates strong{ color:#fff; }
+.rl-meta{ color:var(--text-faint); font-size:12px; }
+.rl-badge{
+  font-size:10px; padding:2px 7px; border-radius:999px; margin-left:auto;
+  border:1px solid; text-transform:uppercase; letter-spacing:.04em;
+  font-weight:600;
+}
+.rl-badge.pending{ color:var(--warn); border-color:rgba(245,158,11,.45); }
+.rl-badge.confirmed{ color:#7CFFB2; border-color:rgba(124,255,178,.4); }
+.rl-badge.done{ color:var(--text-faint); border-color:var(--glass-brd-soft); }
+.rl-badge.cancelled{ color:var(--text-faint); border-color:var(--glass-brd-soft); }
+.rl-actions{ display:flex; gap:6px; flex:0 0 auto; flex-wrap:wrap; }
+.rl-actions .pbtn{ font-size:11px; padding:5px 9px; }
+.empty-row{ text-align:center; color:var(--text-faint); font-size:14px; padding:24px 8px; }
+
+/* Nav: el botón "📱 Último" es verde WhatsApp, más compacto */
+#wa-last.wa-btn{
+  background:linear-gradient(180deg, rgba(37,211,102,.32), rgba(37,211,102,.18));
+  border-color:rgba(37,211,102,.55);
+  color:#b8f5cf;
+  font-weight:600;
+  font-size:13px;
+  padding:8px 12px;
+}
+#wa-last.wa-btn:hover{ background:linear-gradient(180deg, rgba(37,211,102,.45), rgba(37,211,102,.28)); }
+#wa-last.wa-btn:disabled{ opacity:.4; cursor:not-allowed; background:rgba(255,255,255,.05); border-color:var(--glass-brd-soft); color:var(--text-faint); }
 
 /* ---------- Lock screen ---------- */
 body.locked{ overflow:hidden; }

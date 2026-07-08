@@ -18,7 +18,7 @@
 
   <link rel="preload" as="image" href="assets/chillan-bg-mobile.jpg" fetchpriority="high" media="(max-width:900px)">
 
-  <link rel="stylesheet" href="styles.css?v=20">
+  <link rel="stylesheet" href="styles.css?v=21">
 </head>
 <body class="locked">
   <div class="bg-layer" aria-hidden="true"></div>
@@ -52,6 +52,9 @@
         <button id="next" class="btn glass icon" aria-label="Mes siguiente">›</button>
         <button id="today" class="btn glass">Hoy</button>
         <button id="add" class="btn glass primary admin-only" title="Crear nuevo arriendo">+ Arriendo</button>
+        <button id="wa-last" class="btn glass wa-btn admin-only" disabled title="Enviar el último arriendo creado a Beatriz por WhatsApp">📱 Último</button>
+        <button id="list" class="btn glass admin-only" title="Ver / editar / cancelar arriendos">📋 Arriendos</button>
+        <button id="undo" class="btn glass" disabled title="No hay nada que deshacer">↩ Deshacer</button>
       </nav>
     </header>
 
@@ -151,7 +154,19 @@
     </div>
   </div>
 
+  <!-- Modal: lista de arriendos (admin only) — editar / cancelar / enviar a WhatsApp -->
+  <div class="modal-overlay" id="list-modal" hidden>
+    <div class="modal glass modal-wide" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="list-title">
+      <h2 id="list-title">📋 Arriendos</h2>
+      <p class="modal-tip">Lista completa. Toca ✏️ para editar, 📱 para avisar a Beatriz, o cancelar.</p>
+      <div class="rentals-list" id="rentals-list"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="list-close" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
 
-  <script src="app.js?v=20" defer></script>
+
+  <script src="app.js?v=21" defer></script>
 </body>
 </html>
