@@ -1188,7 +1188,13 @@ function toggleAdmin(){
 function updateAdminUI(){
   const btn = document.getElementById("admin");
   if (btn){
-    btn.textContent = state.admin ? "🔓 Admin ON" : "🔒 Admin";
+    if (state.admin){
+      btn.textContent = "🔓 Admin ON · 📱";
+      btn.title = "Modo admin activo. WhatsApp disponible 📱 en popovers y pill bar.";
+    } else {
+      btn.textContent = "🔒 Admin";
+      btn.title = "Activar modo admin para crear / editar arriendos";
+    }
     btn.classList.toggle("on", state.admin);
   }
   document.body.classList.toggle("admin-mode", state.admin);
