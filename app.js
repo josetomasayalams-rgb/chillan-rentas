@@ -43,7 +43,7 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "19";
+const VERSION = "20";
 const MONTHS  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -549,14 +549,17 @@ function renderBrushBar(){
   bar.querySelector(".bb-range").textContent = range;
   bar.querySelector("#brush-confirm").disabled = !b.end;
   bar.querySelector("#brush-details").disabled = !b.end;
+  bar.querySelector("#brush-wa").disabled = !b.end || !state.admin;
 }
 
-async function confirmBrush(){
+// Confirmar el brush. Si `withWhatsApp` es true, abre WhatsApp a Beatriz
+// además del toast normal (atajo del botón "📱 Crear y avisar").
+async function confirmBrush(withWhatsApp=false){
   const b = state.brush;
   if (!b.start || !b.end) return;
   const rental = {
     id: uuid(),
-    source: "direct",   // valor interno; el display siempre dice "Arriendo"
+    source: "direct",
     reference: null,
     guest_name: null,
     checkin_date:  b.start,
@@ -580,7 +583,6 @@ async function confirmBrush(){
       confirmed_at: null, done_at: null,
       created_at: new Date().toISOString(),
     });
-    // Push undo: deshacer = borrar el rental (cascade borra la cleaning)
     pushUndo({
       op: "create",
       rentals: [rental],
@@ -589,12 +591,18 @@ async function confirmBrush(){
     });
     b.start = null; b.end = null;
     render();
-    // En admin: ofrecer enviar a Beatriz directo desde el toast
+
     if (state.admin && CONFIG.beatrizWhatsApp){
+      // Ofrecer enviar a Beatriz. Si withWhatsApp=true, abrir WhatsApp
+      // directo sin preguntar (atajo del botón "📱 Crear y avisar").
       toast("✓ Arriendo creado", "ok", 6000, [
         { label: "📱 Enviar a Beatriz", action: () => openWhatsApp(rental) },
         { label: "OK", action: null },
       ]);
+      if (withWhatsApp){
+        // Pequeño delay para que el toast se muestre antes de abrir el popup
+        setTimeout(() => openWhatsApp(rental), 400);
+      }
     } else {
       toast("✓ Arriendo creado");
     }
@@ -1339,8 +1347,13 @@ function bind(){
 
   // Brush bar
   document.getElementById("brush-cancel").addEventListener("click", cancelBrush);
-  document.getElementById("brush-confirm").addEventListener("click", confirmBrush);
+  document.getElementById("brush-confirm").addEventListener("click", () => confirmBrush(false));
   document.getElementById("brush-details").addEventListener("click", openRentalFormFromBrush);
+  // Atajo: crear y abrir WhatsApp en un solo click
+  document.getElementById("brush-wa").addEventListener("click", () => {
+    if (!state.admin) return;
+    confirmBrush(true);
+  });
 
   // Banner de schema faltante
   document.getElementById("sb-retry").addEventListener("click", retryConnection);
