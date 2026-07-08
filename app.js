@@ -43,7 +43,7 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "21";
+const VERSION = "22";
 const MONTHS  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -734,6 +734,11 @@ function renderGrid(){
                 && r.checkin_date <= dateStr
                 && r.checkout_date >= dateStr)
       .sort((a,b) => sourceOrderIdx(a.source) - sourceOrderIdx(b.source));
+
+    if (dayRentals.length){
+      cell.classList.add("occupied");
+      cell.style.setProperty("--fill-color", sourceMeta(dayRentals[0].source).color);
+    }
 
     const segs = document.createElement("div");
     segs.className = "segments";
