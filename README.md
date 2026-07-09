@@ -1,5 +1,10 @@
 # chillan-rentas
 
+> Esta PWA usa el backend compartido versionado en el repositorio
+> `departamento-chillan/supabase/`. No copies PINes ni service keys aquí: la
+> Edge Function `calendar-api` valida los PINes en servidor y entrega sesiones
+> de 24 horas.
+
 Plataforma de operaciones de arriendos para el departamento familiar de Chillán. Vista mobile-first con Liquid Glass (estilo Apple), calendario de arriendos, tareas generadas automáticamente al check-out, y un botoncito Admin para que el dueño registre arriendos con brush selection.
 
 Stack: **vanilla JS, no build, no framework.** Tres archivos (`index.html` + `app.js` + `styles.css`) + assets + schema SQL. Se sirve con cualquier static server.
@@ -11,8 +16,8 @@ cd chillan-rentas
 python3 -m http.server 8000   # luego abrir http://localhost:8000
 ```
 
-PIN de entrada: `0000` (cambiar en `app.js` → `CONFIG.opsPin`).
-PIN admin: `2407` (cambiar en `app.js` → `CONFIG.adminPin`).
+El PIN de entrada y el PIN admin se configuran como secretos de Supabase
+(`OPS_PIN` y `OPS_ADMIN_PIN`); nunca se escriben en `app.js`.
 
 > `file://` no funciona — el dynamic ES-module import de Supabase y los paths relativos requieren http.
 
@@ -22,11 +27,13 @@ PIN admin: `2407` (cambiar en `app.js` → `CONFIG.adminPin`).
 2. **SQL Editor** → New query → pegar el contenido de `schema.sql` → Run.
    Crea las tablas `rentals`, `cleanings`, `cleaning_comments` + RLS + realtime.
 3. **Project Settings → API** → copiar **Project URL** y **anon public key**.
-4. Pegar en `app.js` arriba (líneas ~13-14, `supabaseUrl` y `supabaseAnonKey`).
-5. **Cambiar los PINes** en `app.js`:
-   - `CONFIG.opsPin` (default `"0000"`) — quien usa la vista móvil
-   - `CONFIG.adminPin` (default `"2407"`) — admin (modo edición)
-6. **Deploy**: cualquier static host. Recomendado **Cloudflare Pages** + **Cloudflare Access** (gratis hasta 50 usuarios, ver paso 6).
+4. Aplicar primero la migración compartida
+   `../supabase/migrations/202607090001_calendar_security.sql` y desplegar
+   `calendar-api` desde el repositorio familiar.
+5. Cargar en Supabase `OPS_PIN`, `OPS_ADMIN_PIN`, `FAMILY_PIN`,
+   `CALENDAR_SESSION_SECRET`, `RATE_LIMIT_SALT` y `SUPABASE_SERVICE_ROLE_KEY`.
+6. **Deploy**: GitHub Pages publica esta PWA en
+   `https://josetomasayalams-rgb.github.io/chillan-rentas/`.
 
 ## Cómo se usa
 
@@ -48,7 +55,9 @@ PIN admin: `2407` (cambiar en `app.js` → `CONFIG.adminPin`).
 - **Una** `rental` por período de arriendo. Estados: `scheduled | in_progress | completed | cancelled`.
 - **Una** `cleaning` (tarea) por `rental`, generada automáticamente al `checkout_date` a las 12:00. Estados: `pending | confirmed | done | cancelled`.
 - `cleaning_comments` opcional — para que el operador deje notas (ej: "dejé las llaves en la cocina").
-- RLS abierto por diseño (la defensa es la URL staying dentro del círculo familiar). Si querés cerrar, agregá Supabase Auth + passcode compartido.
+- El calendario público solo muestra fechas, estado y tipo de arriendo. Datos
+  personales y comentarios se leen con sesión; DML directo queda rechazado por
+  RLS y la API realiza las operaciones atómicas.
 
 ## Cache busting
 

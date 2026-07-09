@@ -12,19 +12,12 @@ const CONFIG = {
   // Mismas claves que el calendario principal (../app.js).
   supabaseUrl:    "https://uimqusoylxpyljbfqumm.supabase.co",
   supabaseAnonKey:"sb_publishable_B_MIa8pWGFjzLhdzLoi61A_kffCRo8_",
+  apiUrl:         "https://uimqusoylxpyljbfqumm.supabase.co/functions/v1/calendar-api",
 
   // WhatsApp de Beatriz (formato internacional sin '+', ej: '56957333361').
   // Si está vacío, el botón de WhatsApp muestra un toast y no abre nada.
   beatrizWhatsApp: "56957333361",
 
-  // PIN de entrada — el mismo para todos.
-  // Cambiar antes de desplegar. Distinto de "9014" del calendario familiar.
-  opsPin:     "0000",
-
-  // Clave para activar el modo admin (botoncito del footer). Distinta del
-  // PIN de entrada. Por defecto coincide con la del calendario familiar
-  // (2407) — el admin solo necesita recordar una.
-  adminPin:       "2407",
 
   sourceLabels: {
     arriendo: "Arriendo",
@@ -43,7 +36,7 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "22";
+const VERSION = "23";
 const MONTHS  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -52,6 +45,8 @@ const LS = {
   cleanings:   "ops-cleanings",
   comments:    "ops-comments",
   lockEnabled: "ops-lock-enabled",     // "1" = lock al iniciar; "0" = sin clave
+  session:     "ops-api-session",
+  adminSession:"ops-api-admin-session",
 };
 
 // ---------- Estado ----------
@@ -64,8 +59,8 @@ const state = {
   admin: false,         // modo admin: permite crear/editar/cancelar
   brush: { start: null, end: null },   // selección de arriendo por click en celdas
   loadError: null,
-  schemaMissing: false, // true → fallback a localStore, mostrar banner
-  _demoted: false,      // true = ya caímos a local por error en runtime
+  schemaMissing: false, // legacy migration state; the banner is now network-only
+  _demoted: false,
   _unsub: null,         // unsub del realtime / onChange, para retry limpio
   _probeData: null,     // cache del loadAll() del probe (evita doble fetch)
   tickHandle: null,
@@ -74,6 +69,8 @@ const state = {
   undo: [],             // pila de inversas (máx 7) para el botón Deshacer
   lockEnabled: true,    // mostrar lock al iniciar (persiste en localStorage)
   unlocked: false,      // sesión: true después de tipear la clave correcta
+  session: null,
+  adminSession: null,
 };
 const UNDO_LIMIT = 7;
 
@@ -147,9 +144,15 @@ function updateLockToggle(){
     btn.classList.add("off");
   }
 }
+function restoreSession(key){
+  try{
+    const session = JSON.parse(localStorage.getItem(key) || "null");
+    return session?.token && new Date(session.expiresAt).getTime() > Date.now() ? session : null;
+  }catch{ return null; }
+}
 function applyLockState(){
   const lock = document.getElementById("lock");
-  if (state.lockEnabled && !state.unlocked){
+  if (state.lockEnabled && !state.unlocked && !state.session){
     document.body.classList.add("locked");
     lock.hidden = false;
   } else {
@@ -174,145 +177,58 @@ function uuid(){
   });
 }
 
-// ---------- Store ----------
-function localStore(){
-  const get = (k) => { try { return JSON.parse(localStorage.getItem(k) || "[]"); } catch { return []; } };
-  const set = (k, v) => localStorage.setItem(k, JSON.stringify(v));
-  return {
-    async loadAll(){
-      return {
-        rentals:   get(LS.rentals),
-        cleanings: get(LS.cleanings),
-        comments:  get(LS.comments),
-      };
-    },
-    async upsertRental(r){
-      const list = get(LS.rentals); const i = list.findIndex(x => x.id === r.id);
-      if (i >= 0) list[i] = r; else list.push(r);
-      set(LS.rentals, list);
-    },
-    async removeRental(id){
-      set(LS.rentals, get(LS.rentals).filter(r => r.id !== id));
-    },
-    async upsertCleaning(c){
-      const list = get(LS.cleanings); const i = list.findIndex(x => x.id === c.id);
-      if (i >= 0) list[i] = c; else list.push(c);
-      set(LS.cleanings, list);
-    },
-    async removeCleaning(id){
-      set(LS.cleanings, get(LS.cleanings).filter(c => c.id !== id));
-    },
-    async addComment(cm){
-      const list = get(LS.comments); list.push(cm); set(LS.comments, list);
-    },
-    onChange(cb){
-      window.addEventListener("storage", e => {
-        if ([LS.rentals, LS.cleanings, LS.comments].includes(e.key)) cb();
-      });
-    },
-  };
+// ---------- Store: API privada + proyección pública ------------------
+async function api(action, payload = {}){
+  const headers = { "content-type": "application/json" };
+  const session = state.adminSession || state.session;
+  if (session?.token) headers.authorization = `Bearer ${session.token}`;
+  const response = await fetch(CONFIG.apiUrl, { method:"POST", headers, body:JSON.stringify({ action, ...payload }) });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok){
+    if (response.status === 401){ state.session = null; state.adminSession = null; }
+    throw new Error(data.error || "No se pudo comunicar con operaciones.");
+  }
+  return data;
 }
 
-function makeSupabaseStore(sb){
+function makeApiStore(){
   return {
     async loadAll(){
-      const [r, c, cm] = await Promise.all([
-        sb.from("rentals").select("*").order("checkin_date"),
-        sb.from("cleanings").select("*").order("scheduled_date"),
-        sb.from("cleaning_comments").select("*").order("created_at"),
-      ]);
-      if (r.error) throw r.error;
-      if (c.error) throw c.error;
-      if (cm.error) throw cm.error;
-      return { rentals: r.data || [], cleanings: c.data || [], comments: cm.data || [] };
+      const data = await api((state.session || state.adminSession) ? "ops.list" : "ops.public.list");
+      return { rentals:data.rentals || [], cleanings:data.cleanings || [], comments:data.comments || [] };
     },
-    async upsertRental(rental){
-      const { error } = await sb.from("rentals").upsert(rental);
-      if (error) throw error;
-    },
-    async removeRental(id){
-      const { error } = await sb.from("rentals").delete().eq("id", id);
-      if (error) throw error;
-    },
-    async upsertCleaning(cleaning){
-      const { error } = await sb.from("cleanings").upsert(cleaning);
-      if (error) throw error;
-    },
-    async removeCleaning(id){
-      const { error } = await sb.from("cleanings").delete().eq("id", id);
-      if (error) throw error;
-    },
-    async addComment(cm){
-      const { error } = await sb.from("cleaning_comments").insert(cm);
-      if (error) throw error;
-    },
-    onChange(cb){
-      const channel = sb.channel("ops-changes")
-        .on("postgres_changes", { event: "*", schema: "public", table: "rentals"   }, () => cb())
-        .on("postgres_changes", { event: "*", schema: "public", table: "cleanings" }, () => cb())
-        .subscribe();
-      return () => sb.removeChannel(channel);
+    async upsertRental(rental){ await api("ops.rental.upsert", { rental }); },
+    async removeRental(id){ await api("ops.rental.delete", { id }); },
+    async upsertCleaning(cleaning){ await api("ops.cleaning.upsert", { cleaning }); },
+    async removeCleaning(id){ await api("ops.cleaning.delete", { id }); },
+    async addComment(comment){ await api("ops.comment.create", { comment }); },
+    async onChange(cb){
+      try{
+        const { createClient } = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
+        const sb = createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey);
+        const channel = sb.channel("ops-public-calendar")
+          .on("postgres_changes", { event:"*", schema:"public", table:"ops_rentals_public" }, cb)
+          .on("postgres_changes", { event:"*", schema:"public", table:"ops_cleanings_public" }, cb)
+          .subscribe();
+        return () => sb.removeChannel(channel);
+      }catch(err){ console.warn("Realtime no disponible:", err); return () => {}; }
     },
   };
 }
 
 async function initStore(){
   const badge = document.getElementById("mode-badge");
-  let live = false, configuredButFailed = false;
-  if (CONFIG.supabaseUrl && CONFIG.supabaseAnonKey){
-    try{
-      const { createClient } = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
-      const sb = createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey);
-      const candidate = makeSupabaseStore(sb);
-
-      // Probe: hacer un loadAll antes de setear state.store. Si las tablas
-      // no existen (schema no creado), caemos a localStore antes de que
-      // el primer write falle con un mensaje feo.
-      const probe = await candidate.loadAll().catch(e => ({ __err: e }));
-      if (probe && probe.__err){
-        const cat = categorizeError(probe.__err);
-        console.warn("Supabase probe falló:", cat);
-        if (cat.kind === "schema" || cat.kind === "network"){
-          state.store = localStore();
-          state.schemaMissing = (cat.kind === "schema");
-          configuredButFailed = true;
-        } else {
-          state.store = candidate;
-          state.schemaMissing = false;
-        }
-      } else {
-        state.store = candidate;
-        state._probeData = probe;
-      }
-    }catch(err){
-      console.error("Supabase init falló, usando modo local:", err);
-      state.store = localStore();
-      configuredButFailed = true;
-    }
-  }
-  if (!state.store) state.store = localStore();
-
-  // Badge: "live" solo si el probe trajo datos sin error. "schema" y "network"
-  // son fallback a local (el badge muestra warning + v).
-  const isLive = !!state._probeData;
-  badge.classList.toggle("live", isLive);
-  badge.classList.toggle("warn", !isLive);
-  badge.textContent = (isLive
-    ? "● Modo live · sincronizado"
-    : (state.schemaMissing
-        ? "⚠ Faltan tablas en la nube"
-        : (configuredButFailed
-            ? "⚠ Modo local (no se pudo conectar a Supabase)"
-            : "○ Modo local · solo este dispositivo"))) + "  ·  v" + VERSION;
-
+  state.store = makeApiStore();
+  state.schemaMissing = false;
+  state._demoted = false;
+  badge.classList.add("live");
+  badge.classList.remove("warn");
+  badge.textContent = "● Operaciones en la nube · v" + VERSION;
   if (state._unsub) try { state._unsub(); } catch {}
-  state._unsub = state.store.onChange(() => load(true));
-
-  if (state.schemaMissing) showSchemaBanner();
+  state._unsub = await state.store.onChange(() => load(true));
 }
 
-// Helper: categoriza un error de Supabase. Usado por load() y los call sites
-// de escritura para decidir si caen a localStore.
+// Clasifica los errores para dar feedback sin inventar un modo local paralelo.
 function categorizeError(err){
   const msg  = (err && err.message) ? String(err.message) : String(err || "");
   const code = err && (err.code || err.status);
@@ -329,52 +245,32 @@ function categorizeError(err){
 
 async function load(isRemotePush=false){
   try{
-    let data;
-    if (state._probeData && !isRemotePush){
-      // Reusar el resultado del probe de initStore (evita doble fetch).
-      data = state._probeData;
-      state._probeData = null;
-    } else {
-      data = await state.store.loadAll();
-    }
+    const data = await state.store.loadAll();
     state.rentals   = data.rentals   || [];
     state.cleanings = data.cleanings || [];
     state.comments  = data.comments  || [];
     state.loadError = null;
     state.updatedAt = new Date().toISOString();
+    hideSchemaBanner();
+    updateModeBadge();
   }catch(err){
     const cat = categorizeError(err);
     console.error("load() falló:", cat);
-    if ((cat.kind === "schema" || cat.kind === "network") && !state._demoted){
-      // Auto-fallback: swap a localStore y reintentar.
-      state._demoted = true;
-      if (state._unsub) try { state._unsub(); } catch {}
-      state.store = localStore();
-      state.schemaMissing = (cat.kind === "schema");
-      state._unsub = state.store.onChange(() => load(true));
-      showSchemaBanner();
-      updateModeBadge();
-      return load(isRemotePush);   // reintenta con local
-    }
     state.loadError = cat.message;
+    showSchemaBanner();
   }
   render();
   updateUndoBtn();
   updateWaLastBtn();   // habilita/deshabilita el botón "📱 Último" según haya rentals
 }
 
-// Refresca el badge de modo cuando el store cambia de identidad.
+// Refresca el badge cuando la red cambia de estado.
 function updateModeBadge(){
   const badge = document.getElementById("mode-badge");
   if (!badge) return;
-  // Si el probe original fue exitoso y nunca demotamos, es live.
-  const isLive = !!state._probeData === false && !state._demoted && !state.schemaMissing;
-  // (Lógica simplificada: confiamos en las flags de estado.)
-  badge.classList.toggle("live", !state._demoted && !state.schemaMissing && !!state.store);
-  badge.classList.toggle("warn", state.schemaMissing);
-  badge.textContent = (state.schemaMissing
-    ? "⚠ Faltan tablas en la nube"
-    : "● Modo live · sincronizado") + "  ·  v" + VERSION;
+  badge.classList.toggle("live", !state.loadError);
+  badge.classList.toggle("warn", !!state.loadError);
+  badge.textContent = (state.loadError ? "⚠ Sin conexión" : "● Operaciones en la nube") + " · v" + VERSION;
 }
 
 // Banner: aparece cuando detectamos que el schema no existe en Supabase.
@@ -404,12 +300,9 @@ async function retryConnection(){
     await initStore();
     await load();
 
-    if (state.schemaMissing){
-      showSchemaBanner();
-      toast("Sigue sin haber tablas en la nube", "warn");
-    } else {
-      toast("✓ Sincronización activa", "ok");
-    }
+    hideSchemaBanner();
+    updateModeBadge();
+    toast("✓ Sincronización activa", "ok");
   }catch(err){
     showSchemaBanner();
     toast("Error al reintentar: " + (err.message || err), "err");
@@ -608,33 +501,8 @@ async function confirmBrush(withWhatsApp=false){
       toast("✓ Arriendo creado");
     }
   }catch(err){
-    // Si el schema se cayó mid-session, demote y reintenta.
-    const cat = categorizeError(err);
-    if ((cat.kind === "schema" || cat.kind === "network") && !state._demoted){
-      state._demoted = true;
-      if (state._unsub) try { state._unsub(); } catch {}
-      state.store = localStore();
-      state.schemaMissing = (cat.kind === "schema");
-      state._unsub = state.store.onChange(() => load(true));
-      showSchemaBanner();
-      updateModeBadge();
-      try{
-        await state.store.upsertRental(rental);
-        await state.store.upsertCleaning({
-          id: uuid(), rental_id: rental.id, scheduled_date: rental.checkout_date,
-          scheduled_time: "12:00", status: "pending",
-          confirmed_at: null, done_at: null, created_at: new Date().toISOString(),
-        });
-        b.start = null; b.end = null;
-        render();
-        toast("✓ Arriendo guardado en modo local", "warn");
-        return;
-      }catch(e2){
-        toast("Error: " + (e2.message || e2), "err");
-      }
-    } else {
-      toast("Error al guardar: " + (err.message || err), "err");
-    }
+    toast("Error al guardar: " + (err.message || err), "err");
+    showSchemaBanner();
     cta.disabled = false; cta.textContent = orig;
   }
 }
@@ -804,8 +672,12 @@ function openPopover(r, anchor){
   const meta = sourceMeta(r.source);
   const cs = state.cleanings.filter(c => c.rental_id === r.id);
   const c0 = cs[0];
+  const commentRows = c0 ? state.comments.filter(c => c.cleaning_id === c0.id) : [];
   const cleaningLine = c0
     ? `<div class="prow"><span>Tarea</span><b>${escapeHtml(prettyShort(c0.scheduled_date))} · ${escapeHtml(c0.status)}</b></div>`
+    : "";
+  const commentsLine = commentRows.length
+    ? `<div class="prow comments"><span>Notas</span><b>${commentRows.map(c => escapeHtml(c.body)).join(" · ")}</b></div>`
     : "";
 
   // Acciones solo visibles en admin. El botón de WhatsApp es el más visible
@@ -827,6 +699,7 @@ function openPopover(r, anchor){
     <div class="prow"><span>Salida</span><b>${escapeHtml(prettyShort(r.checkout_date))} 12:00</b></div>
     ${r.guest_name ? `<div class="prow"><span>Huesped</span><b>${escapeHtml(r.guest_name)}</b></div>` : ""}
     ${cleaningLine}
+    ${commentsLine}
     ${r.notes ? `<div class="prow"><span>Nota</span><b>${escapeHtml(r.notes)}</b></div>` : ""}
     ${adminActions}
   `;
@@ -1177,6 +1050,12 @@ async function onTicketTap(cleaning){
   else updates.done_at = null;
   try{
     await state.store.upsertCleaning(updates);
+    if (next === "done"){
+      const body = prompt("Nota para esta limpieza (opcional):");
+      if (body && body.trim()){
+        await state.store.addComment({ id: uuid(), cleaning_id: cleaning.id, body: body.trim() });
+      }
+    }
     haptic(8);
     await load();
   }catch(err){
@@ -1262,15 +1141,32 @@ function hideToast(){
 }
 
 // ---------- Modo admin (mismo patrón que el calendario familiar) ----------
-function toggleAdmin(){
+async function startOpsSession(app, pin){
+  const session = await api("session.create", { app, pin });
+  if (app === "ops-admin"){
+    state.adminSession = session;
+    try { localStorage.setItem(LS.adminSession, JSON.stringify(session)); } catch {}
+  } else {
+    state.session = session;
+    try { localStorage.setItem(LS.session, JSON.stringify(session)); } catch {}
+  }
+  await load();
+}
+
+async function toggleAdmin(){
   if (state.admin){
     state.admin = false;
+    state.adminSession = null;
+    try { localStorage.removeItem(LS.adminSession); } catch {}
     cancelBrush();   // limpiar selección al salir del modo admin
+    await load();
   } else {
     const key = prompt("Clave de admin:");
     if (key === null) return;
-    if (key === CONFIG.adminPin) state.admin = true;
-    else { alert("Clave incorrecta"); return; }
+    try{
+      await startOpsSession("ops-admin", key);
+      state.admin = true;
+    }catch(err){ alert(err.message || "Clave incorrecta"); return; }
   }
   updateAdminUI();
   render();
@@ -1336,16 +1232,15 @@ function setupLock(){
       clearPins();
     }, 800);
   }
-  function check(){
+  async function check(){
     const code = getCode();
     if (code.length < pins.length) return;
-    if (code === CONFIG.opsPin){
-      success();
-    } else {
-      fail("Clave incorrecta");
-    }
+    err.textContent = "Validando…";
+    try { await success(code); }
+    catch(err) { fail(err.message || "Clave incorrecta"); }
   }
-  function success(){
+  async function success(code){
+    await startOpsSession("ops", code);
     lock.classList.add("unlocking");
     document.body.classList.remove("locked");
     setTimeout(() => {
@@ -1389,7 +1284,7 @@ function setupLock(){
       }
     });
 
-    // FALLBACK: input — para paste rápido o entrada programática
+    // Fallback real para teclado móvil, autofill y pruebas programáticas.
     pin.addEventListener("input", (e) => {
       const raw = e.target.value;
       const digitCount = raw.replace(/\D/g, "").length;
@@ -1397,9 +1292,13 @@ function setupLock(){
         // Múltiples dígitos (paste o entrada rápida): repartir
         const n = distributeDigits(raw);
         if (n >= pins.length) check();
+      } else if (digitCount === 1){
+        setPin(i, raw.replace(/\D/g, "").slice(0, 1));
+        if (i < pins.length - 1) focusPin(i + 1);
+        else check();
+      } else {
+        setPin(i, "");
       }
-      // Si es 1 dígito, el keydown ya lo manejó. No hacer nada acá
-      // para evitar doble-advance.
     });
 
     // FALLBACK: paste explícito
@@ -1525,6 +1424,7 @@ function move(delta){
     const t = today();
     state.view = { y: t.y, m: t.m };
     state.lockEnabled = isLockEnabled();
+    state.session = restoreSession(LS.session);
     bind();
     await initStore();
     await load();
