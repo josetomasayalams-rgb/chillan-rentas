@@ -43,7 +43,7 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "22";
+const VERSION = "25";
 const MONTHS  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -789,7 +789,7 @@ function renderGrid(){
         ticket.title = c.status === "done"
           ? `Tarea del ${prettyShort(c.scheduled_date)} hecha — tocar para deshacer`
           : `Tocar para marcar la tarea del ${prettyShort(c.scheduled_date)} como hecha`;
-        ticket.addEventListener("click", e => { e.stopPropagation(); onTicketTap(c); });
+        ticket.addEventListener("click", e => { e.stopPropagation(); onTicketTap(c, ticket); });
         cell.appendChild(ticket);
       }
     }
@@ -1167,20 +1167,81 @@ function closeConfirmModal(result){
   state.pendingCancelRental = null;
 }
 
-// ---------- Ticket: toggle directo (sin modal, sin comentario) ----------
-// Tap en ticket pending → done (verde). Tap en ticket done → pending (glass).
-// El cambio de color ES la confirmación. No hay modal ni texto.
-async function onTicketTap(cleaning){
+// ---------- Confirmación protegida de limpieza ----------
+let cleaningReadyResolver = null;
+let cleaningReadyTimer = null;
+let cleaningReadyRemaining = 5;
+let cleaningReadyTrigger = null;
+
+function updateCleaningReadyCountdown(){
+  const card = document.querySelector("#cleaning-ready-modal .cleaning-ready-card");
+  const value = document.getElementById("cleaning-countdown-value");
+  const status = document.getElementById("cleaning-countdown-status");
+  const confirmBtn = document.getElementById("cleaning-ready-confirm");
+  const remaining = Math.max(0, cleaningReadyRemaining);
+  const progress = (remaining / 5) * 360;
+
+  card.style.setProperty("--countdown-progress", `${progress}deg`);
+  value.textContent = String(remaining);
+  confirmBtn.disabled = remaining > 0;
+  confirmBtn.textContent = remaining > 0 ? `Confirmar en ${remaining} s` : "Sí, está todo listo";
+  status.textContent = remaining > 0
+    ? `Podrás confirmar en ${remaining} ${remaining === 1 ? "segundo" : "segundos"}`
+    : "Ya puedes confirmar la tarea";
+}
+
+function askCleaningReady(trigger){
+  if (cleaningReadyResolver) return Promise.resolve(false);
+  return new Promise(resolve => {
+    cleaningReadyResolver = resolve;
+    cleaningReadyTrigger = trigger || document.activeElement;
+    cleaningReadyRemaining = 5;
+    const modal = document.getElementById("cleaning-ready-modal");
+    modal.hidden = false;
+    updateCleaningReadyCountdown();
+    cleaningReadyTimer = setInterval(() => {
+      cleaningReadyRemaining -= 1;
+      updateCleaningReadyCountdown();
+      if (cleaningReadyRemaining <= 0){
+        clearInterval(cleaningReadyTimer);
+        cleaningReadyTimer = null;
+      }
+    }, 1000);
+    requestAnimationFrame(() => modal.querySelector(".cleaning-ready-card").focus());
+  });
+}
+
+function closeCleaningReadyModal(result){
+  clearInterval(cleaningReadyTimer);
+  cleaningReadyTimer = null;
+  document.getElementById("cleaning-ready-modal").hidden = true;
+  const resolver = cleaningReadyResolver;
+  cleaningReadyResolver = null;
+  if (resolver) resolver(result);
+  const trigger = cleaningReadyTrigger;
+  cleaningReadyTrigger = null;
+  if (trigger?.isConnected) requestAnimationFrame(() => trigger.focus());
+}
+
+// Pendiente → hecha requiere confirmación. Hecha → pendiente mantiene el toggle rápido.
+async function onTicketTap(cleaning, trigger){
+  if (cleaning.status !== "done"){
+    const ready = await askCleaningReady(trigger);
+    if (!ready) return;
+  }
   const next = cleaning.status === "done" ? "pending" : "done";
   const updates = { ...cleaning, status: next };
   if (next === "done") updates.done_at = new Date().toISOString();
   else updates.done_at = null;
+  if (trigger) trigger.disabled = true;
   try{
     await state.store.upsertCleaning(updates);
     haptic(8);
     await load();
   }catch(err){
     toast("Error: " + (err.message || err), "err");
+  }finally{
+    if (trigger?.isConnected) trigger.disabled = false;
   }
 }
 
@@ -1486,7 +1547,15 @@ function bind(){
     if (e.target.id === "confirm-modal") closeConfirmModal(false);
   });
 
-  // Modal ticket: ya no existe — el ticket es directo (toggle).
+  // Confirmación con cuenta regresiva para marcar una limpieza como hecha.
+  document.getElementById("cleaning-ready-close").addEventListener("click", () => closeCleaningReadyModal(false));
+  document.getElementById("cleaning-ready-skip").addEventListener("click", () => closeCleaningReadyModal(true));
+  document.getElementById("cleaning-ready-confirm").addEventListener("click", e => {
+    if (!e.currentTarget.disabled) closeCleaningReadyModal(true);
+  });
+  document.getElementById("cleaning-ready-modal").addEventListener("click", e => {
+    if (e.target.id === "cleaning-ready-modal") closeCleaningReadyModal(false);
+  });
 
   // Cerrar popover al click fuera / scroll / resize
   document.addEventListener("click", e => {
@@ -1502,6 +1571,7 @@ function bind(){
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
     if (!document.getElementById("list-modal").hidden) closeRentalsList();
+    else if (!document.getElementById("cleaning-ready-modal").hidden) closeCleaningReadyModal(false);
     else if (!document.getElementById("confirm-modal").hidden) closeConfirmModal(false);
     else if (!document.getElementById("rental-modal").hidden) closeRentalForm();
     else { const p = document.getElementById("pop"); if (p) p.hidden = true; }

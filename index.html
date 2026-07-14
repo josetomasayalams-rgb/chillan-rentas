@@ -18,7 +18,7 @@
 
   <link rel="preload" as="image" href="assets/chillan-bg-mobile.jpg" fetchpriority="high" media="(max-width:900px)">
 
-  <link rel="stylesheet" href="styles.css?v=24">
+  <link rel="stylesheet" href="styles.css?v=25">
 </head>
 <body class="locked">
   <div class="bg-layer" aria-hidden="true"></div>
@@ -142,6 +142,33 @@
     </div>
   </div>
 
+  <!-- Confirmación protegida para marcar una limpieza como terminada -->
+  <div class="modal-overlay cleaning-ready-overlay" id="cleaning-ready-modal" hidden>
+    <div class="modal glass cleaning-ready-card" role="dialog" aria-modal="true" tabindex="-1"
+         aria-labelledby="cleaning-ready-title" aria-describedby="cleaning-ready-tip">
+      <button class="modal-close-icon" id="cleaning-ready-close" type="button"
+              aria-label="Cerrar sin confirmar" title="Cerrar">×</button>
+
+      <div class="cleaning-ready-mark" aria-hidden="true">✓</div>
+      <h2 id="cleaning-ready-title">¿Está todo listo?</h2>
+      <p class="cleaning-ready-tip" id="cleaning-ready-tip">
+        Confirma que la limpieza terminó y que el departamento quedó preparado.
+      </p>
+
+      <div class="cleaning-countdown" id="cleaning-countdown" aria-live="polite">
+        <div class="cleaning-countdown-ring" aria-hidden="true">
+          <span id="cleaning-countdown-value">5</span>
+        </div>
+        <span class="cleaning-countdown-status" id="cleaning-countdown-status">Podrás confirmar en 5 segundos</span>
+      </div>
+
+      <div class="cleaning-ready-actions">
+        <button class="btn glass cleaning-skip-btn" id="cleaning-ready-skip" type="button">Confirmar ahora</button>
+        <button class="btn primary" id="cleaning-ready-confirm" type="button" disabled>Confirmar en 5 s</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: confirmar (genérico: cancelar arriendo, regenerar tarea, etc.) -->
   <div class="modal-overlay" id="confirm-modal" hidden>
     <div class="modal glass" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="c-title">
@@ -167,6 +194,6 @@
   </div>
 
 
-  <script src="app.js?v=22" defer></script>
+  <script src="app.js?v=25" defer></script>
 </body>
 </html>
