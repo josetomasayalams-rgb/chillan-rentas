@@ -43,7 +43,7 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "25";
+const VERSION = "26";
 const MONTHS  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -1322,16 +1322,119 @@ function hideToast(){
   clearTimeout(t._h);
 }
 
-// ---------- Modo admin (mismo patrón que el calendario familiar) ----------
+// ---------- Modo admin ----------
+let adminLoginTrigger = null;
+
+function openAdminLogin(){
+  const modal = document.getElementById("admin-login-modal");
+  const pins = [...modal.querySelectorAll(".admin-pin")];
+  adminLoginTrigger = document.activeElement;
+  pins.forEach(pin => {
+    pin.value = "";
+    pin.classList.remove("filled", "wrong");
+  });
+  document.getElementById("admin-login-error").textContent = "";
+  modal.hidden = false;
+  requestAnimationFrame(() => pins[0].focus());
+}
+
+function closeAdminLogin(){
+  document.getElementById("admin-login-modal").hidden = true;
+  const trigger = adminLoginTrigger;
+  adminLoginTrigger = null;
+  if (trigger?.isConnected) requestAnimationFrame(() => trigger.focus());
+}
+
+function submitAdminLogin(){
+  const card = document.querySelector("#admin-login-modal .admin-login-card");
+  const pins = [...card.querySelectorAll(".admin-pin")];
+  const code = pins.map(pin => pin.value).join("");
+  if (code.length < pins.length){
+    document.getElementById("admin-login-error").textContent = "Completa los cuatro dígitos";
+    return;
+  }
+  if (code !== CONFIG.adminPin){
+    document.getElementById("admin-login-error").textContent = "Clave incorrecta";
+    pins.forEach(pin => pin.classList.add("wrong"));
+    card.classList.remove("shake");
+    void card.offsetWidth;
+    card.classList.add("shake");
+    setTimeout(() => {
+      pins.forEach(pin => {
+        pin.value = "";
+        pin.classList.remove("filled", "wrong");
+      });
+      pins[0].focus();
+    }, 500);
+    return;
+  }
+  state.admin = true;
+  closeAdminLogin();
+  updateAdminUI();
+  render();
+  toast("Modo administrador activado");
+}
+
+function setupAdminLogin(){
+  const modal = document.getElementById("admin-login-modal");
+  const pins = [...modal.querySelectorAll(".admin-pin")];
+  pins.forEach((pin, index) => {
+    pin.addEventListener("keydown", event => {
+      if (event.key === "Backspace"){
+        event.preventDefault();
+        if (pin.value){
+          pin.value = "";
+          pin.classList.remove("filled");
+        } else if (index > 0){
+          pins[index - 1].value = "";
+          pins[index - 1].classList.remove("filled");
+          pins[index - 1].focus();
+        }
+      } else if (/^\d$/.test(event.key)){
+        event.preventDefault();
+        pin.value = event.key;
+        pin.classList.add("filled");
+        if (index < pins.length - 1) pins[index + 1].focus();
+        else submitAdminLogin();
+      } else if (event.key === "Enter"){
+        event.preventDefault();
+        submitAdminLogin();
+      }
+    });
+    pin.addEventListener("input", event => {
+      const digits = event.target.value.replace(/\D/g, "");
+      if (digits.length > 1){
+        pins.forEach((item, itemIndex) => {
+          item.value = digits[itemIndex] || "";
+          item.classList.toggle("filled", Boolean(item.value));
+        });
+        if (digits.length >= pins.length) submitAdminLogin();
+      } else {
+        event.target.value = digits.slice(-1);
+        event.target.classList.toggle("filled", Boolean(event.target.value));
+        if (event.target.value && index < pins.length - 1) pins[index + 1].focus();
+      }
+    });
+    pin.addEventListener("paste", event => {
+      event.preventDefault();
+      const digits = (event.clipboardData || window.clipboardData).getData("text").replace(/\D/g, "").slice(0, 4);
+      pins.forEach((item, itemIndex) => {
+        item.value = digits[itemIndex] || "";
+        item.classList.toggle("filled", Boolean(item.value));
+      });
+      if (digits.length === pins.length) submitAdminLogin();
+      else pins[Math.min(digits.length, pins.length - 1)].focus();
+    });
+  });
+}
+
 function toggleAdmin(){
   if (state.admin){
     state.admin = false;
     cancelBrush();   // limpiar selección al salir del modo admin
   } else {
-    const key = prompt("Clave de admin:");
-    if (key === null) return;
-    if (key === CONFIG.adminPin) state.admin = true;
-    else { alert("Clave incorrecta"); return; }
+    openAdminLogin();
+    return;
   }
   updateAdminUI();
   render();
@@ -1340,10 +1443,10 @@ function updateAdminUI(){
   const btn = document.getElementById("admin");
   if (btn){
     if (state.admin){
-      btn.textContent = "🔓 Admin ON · 📱";
+      btn.textContent = "🔓 Admin activo · 📱";
       btn.title = "Modo admin activo. WhatsApp disponible 📱 en popovers y pill bar.";
     } else {
-      btn.textContent = "🔒 Admin";
+      btn.textContent = "🔒 Entrar como admin";
       btn.title = "Activar modo admin para crear / editar arriendos";
     }
     btn.classList.toggle("on", state.admin);
@@ -1483,6 +1586,13 @@ function bind(){
 
   // Admin toggle
   document.getElementById("admin").addEventListener("click", toggleAdmin);
+  document.getElementById("admin-login-close").addEventListener("click", closeAdminLogin);
+  document.getElementById("admin-login-cancel").addEventListener("click", closeAdminLogin);
+  document.getElementById("admin-login-submit").addEventListener("click", submitAdminLogin);
+  document.getElementById("admin-login-modal").addEventListener("click", event => {
+    if (event.target.id === "admin-login-modal") closeAdminLogin();
+  });
+  setupAdminLogin();
 
   // Lock toggle (solo admin, persiste en localStorage)
   document.getElementById("lock-toggle").addEventListener("click", () => {
@@ -1571,6 +1681,7 @@ function bind(){
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
     if (!document.getElementById("list-modal").hidden) closeRentalsList();
+    else if (!document.getElementById("admin-login-modal").hidden) closeAdminLogin();
     else if (!document.getElementById("cleaning-ready-modal").hidden) closeCleaningReadyModal(false);
     else if (!document.getElementById("confirm-modal").hidden) closeConfirmModal(false);
     else if (!document.getElementById("rental-modal").hidden) closeRentalForm();

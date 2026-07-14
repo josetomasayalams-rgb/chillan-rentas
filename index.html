@@ -18,7 +18,7 @@
 
   <link rel="preload" as="image" href="assets/chillan-bg-mobile.jpg" fetchpriority="high" media="(max-width:900px)">
 
-  <link rel="stylesheet" href="styles.css?v=25">
+  <link rel="stylesheet" href="styles.css?v=26">
 </head>
 <body class="locked">
   <div class="bg-layer" aria-hidden="true"></div>
@@ -81,9 +81,32 @@
     <footer class="foot">
       <span id="mode-badge" class="mode-badge"></span>
       <button id="lock-toggle" class="btn glass lock-btn admin-only" title="Lock al iniciar (solo admin)">🔒 Con clave</button>
-      <button id="admin" class="btn glass admin-btn" title="Modo admin: crear / editar arriendos">🔒 Admin</button>
+      <button id="admin" class="btn glass admin-btn" title="Entrar al modo administrador">🔒 Entrar como admin</button>
     </footer>
   </main>
+
+  <!-- Acceso al modo administrador (evita depender del prompt nativo en PWA). -->
+  <div class="modal-overlay admin-login-overlay" id="admin-login-modal" hidden>
+    <div class="modal glass admin-login-card" role="dialog" aria-modal="true" tabindex="-1"
+         aria-labelledby="admin-login-title" aria-describedby="admin-login-tip">
+      <button class="modal-close-icon" id="admin-login-close" type="button"
+              aria-label="Cerrar acceso de administrador" title="Cerrar">×</button>
+      <div class="admin-login-mark" aria-hidden="true">🔐</div>
+      <h2 id="admin-login-title">Modo administrador</h2>
+      <p id="admin-login-tip">Ingresa la clave de administrador</p>
+      <div class="admin-pins" id="admin-pins">
+        <input class="admin-pin" inputmode="numeric" autocomplete="off" pattern="[0-9]*" maxlength="1" aria-label="Dígito administrador 1">
+        <input class="admin-pin" inputmode="numeric" autocomplete="off" pattern="[0-9]*" maxlength="1" aria-label="Dígito administrador 2">
+        <input class="admin-pin" inputmode="numeric" autocomplete="off" pattern="[0-9]*" maxlength="1" aria-label="Dígito administrador 3">
+        <input class="admin-pin" inputmode="numeric" autocomplete="off" pattern="[0-9]*" maxlength="1" aria-label="Dígito administrador 4">
+      </div>
+      <p class="admin-login-error" id="admin-login-error" aria-live="polite"></p>
+      <div class="admin-login-actions">
+        <button class="btn ghost" id="admin-login-cancel" type="button">Cancelar</button>
+        <button class="btn primary" id="admin-login-submit" type="button">Entrar como administrador</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Popover detalle arriendo (con acciones solo en modo admin) -->
   <div class="popover glass" id="pop" hidden></div>
@@ -194,6 +217,6 @@
   </div>
 
 
-  <script src="app.js?v=25" defer></script>
+  <script src="app.js?v=26" defer></script>
 </body>
 </html>

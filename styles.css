@@ -321,7 +321,11 @@ body.admin-mode .admin-only{ display:inline-flex; }
 .mode-badge.live{ color:#7CFFB2; border-color:rgba(124,255,178,.35); }
 
 /* Botón admin — pequeño y discreto (mismo patrón que el calendario familiar) */
-.admin-btn{ font-size:12px; padding:5px 12px; }
+.admin-btn{
+  font-size:12px; padding:7px 13px;
+  border-color:rgba(255,255,255,.28);
+  background:rgba(255,255,255,.11);
+}
 .admin-btn.on{ background:linear-gradient(180deg,#f59e0b,#d97706); border-color:rgba(255,255,255,.3); font-weight:600; }
 body.admin-mode .app{ box-shadow:0 0 0 2px #f59e0b, var(--shadow); }
 
@@ -455,12 +459,55 @@ body.admin-mode .app{ box-shadow:0 0 0 2px #f59e0b, var(--shadow); }
 .cleaning-ready-actions .btn:disabled{ opacity:.5; }
 .cleaning-skip-btn{ background:rgba(255,255,255,.1); }
 
+/* Acceso administrador: modal propio para que funcione igual en Safari/PWA. */
+.admin-login-overlay{
+  z-index:95;
+  background:rgba(4,8,20,.38);
+  -webkit-backdrop-filter:blur(14px) saturate(145%);
+  backdrop-filter:blur(14px) saturate(145%);
+}
+.admin-login-card{
+  width:min(390px,100%); padding:30px 24px 24px; text-align:center;
+  background:linear-gradient(145deg, rgba(255,255,255,.22), rgba(255,255,255,.08));
+  -webkit-backdrop-filter:blur(32px) saturate(190%);
+  backdrop-filter:blur(32px) saturate(190%);
+  border-color:rgba(255,255,255,.32);
+  box-shadow:0 24px 70px rgba(0,0,0,.46), inset 0 1px 0 rgba(255,255,255,.25);
+}
+.admin-login-card h2{ margin:8px 38px 6px; }
+.admin-login-card > p:not(.admin-login-error){ margin:0 0 18px; color:var(--text-dim); font-size:13px; }
+.admin-login-mark{ font-size:32px; line-height:1; }
+.admin-pins{ display:flex; justify-content:center; gap:10px; margin:6px 0 4px; }
+.admin-pin{
+  width:54px; height:62px; border-radius:14px;
+  border:1px solid var(--glass-brd); background:rgba(255,255,255,.14);
+  color:var(--text); font-size:26px; font-weight:700; text-align:center; outline:none;
+  -webkit-text-security:disc; text-security:disc;
+  transition:border-color .15s ease, background .15s ease, transform .15s ease;
+}
+.admin-pin:focus{ border-color:#fbbf24; background:rgba(255,255,255,.22); transform:translateY(-1px); }
+.admin-pin.filled{ border-color:rgba(251,191,36,.65); }
+.admin-pin.wrong{ border-color:#fb7185; background:rgba(251,113,133,.13); }
+.admin-login-error{ min-height:18px; margin:8px 0 10px; color:#fecdd3; font-size:12px; }
+.admin-login-actions{ display:grid; grid-template-columns:auto 1fr; gap:10px; }
+.admin-login-actions .btn{ min-height:44px; }
+.admin-login-card.shake{ animation:adminShake .32s ease; }
+@keyframes adminShake{
+  0%,100%{ transform:translateX(0); }
+  25%{ transform:translateX(-6px); }
+  75%{ transform:translateX(6px); }
+}
+
 @media (max-width:520px){
   .cleaning-ready-card{ padding:28px 18px 18px; }
   .cleaning-ready-card h2{ font-size:20px; }
   .cleaning-ready-actions{ grid-template-columns:1fr; }
   .cleaning-ready-actions #cleaning-ready-confirm{ grid-row:1; }
   .cleaning-countdown{ justify-content:flex-start; }
+  .admin-login-card{ padding:28px 18px 18px; }
+  .admin-pin{ width:50px; height:58px; }
+  .admin-login-actions{ grid-template-columns:1fr; }
+  .admin-login-actions #admin-login-submit{ grid-row:1; }
 }
 
 /* ---------- Popover ---------- */
