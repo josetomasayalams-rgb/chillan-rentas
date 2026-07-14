@@ -35,12 +35,13 @@ body{
 
 .bg-layer{
   position:fixed; inset:0; z-index:-2;
-  background-image:url("../assets/chillan-bg.jpg");
+  background-image:url("assets/chillan-bg.jpg");
   background-position:center; background-size:cover; background-repeat:no-repeat;
+  background-attachment:fixed;
   transform:scale(1.04);
 }
 @media (max-width:900px){
-  .bg-layer{ background-image:url("../assets/chillan-bg-mobile.jpg"); }
+  .bg-layer{ background-image:url("assets/chillan-bg-mobile.jpg"); }
 }
 body::before{
   content:""; position:fixed; inset:0; z-index:-1;
