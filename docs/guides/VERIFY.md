@@ -15,6 +15,11 @@ que las estadías consecutivas alternen tonos sin cambiar de color durante su
 duración, que cada reserva sincronizada tenga un botón de aseo en checkout y que una
 estadía finalizada permanezca visible hasta confirmar la limpieza.
 
+Confirma que la grilla exponga exactamente 31 fechas consecutivas desde hoy,
+incluya el cambio al mes siguiente, muestre el rango correcto en el encabezado
+y no inserte huecos entre fechas. Las flechas deben avanzar o retroceder 31 días;
+`Desde hoy` debe restaurar el rango vigente y el seguimiento diario.
+
 Para la bandeja de Beatriz, sin enviar un mensaje real, verifica:
 
 1. actualización al entrar, al volver al foco y mediante “Actualizar”;

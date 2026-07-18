@@ -36,4 +36,8 @@ Los mensajes preparados para Beatriz contienen únicamente llegada, salida y
 la solicitud de limpieza. La plataforma no recibe el origen de la reserva,
 grupo, huésped, UID ni notas privadas.
 
+La ventana móvil de 31 días se calcula exclusivamente con fechas ya disponibles
+en el cliente. Cruzar al mes siguiente no amplía el contrato `/availability`,
+no solicita campos adicionales y no altera los permisos de escritura.
+
 Comunica incidentes a los administradores de la propiedad sin compartir datos de huéspedes por canales públicos.

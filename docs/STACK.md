@@ -20,3 +20,8 @@ La fuente de calendario usa `fetch`, `AbortController` y una caché de última
 copia válida en `localStorage`; no necesita un SDK ni acceso iCal desde el navegador.
 La memoria de avisos usa tres tablas Supabase aditivas y los mismos adaptadores
 `state.store`; no introduce dependencias nuevas en el cliente.
+
+La planificación continua se implementa con aritmética de fechas nativa y un
+temporizador del navegador que reconcilia el inicio una vez por minuto. No usa
+una librería de calendario ni agrega persistencia: la ventana contiene 31 fechas
+derivadas y la navegación manual sólo modifica estado de presentación.

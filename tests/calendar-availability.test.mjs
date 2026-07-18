@@ -17,7 +17,9 @@ const {
   planBatchResolution,
   planCalendarCleaningReconciliation,
   planNotificationReconciliation,
+  reconcileRollingView,
   reservationTone,
+  rollingMonthWindow,
   sourceMeta,
   CHECKIN_TIME,
   CHECKOUT_TIME,
@@ -95,6 +97,27 @@ test("alterna tonos de forma cronológica y conserva el tono durante cada estad�
 test("usa explícitamente check-in 15:00 y check-out 12:00", () => {
   assert.equal(CHECKIN_TIME, "15:00");
   assert.equal(CHECKOUT_TIME, "12:00");
+});
+
+test("construye una planificación móvil de 31 días aunque cambie el mes", () => {
+  const range = rollingMonthWindow("2026-07-18");
+  assert.equal(range.start, "2026-07-18");
+  assert.equal(range.endInclusive, "2026-08-17");
+  assert.equal(range.endExclusive, "2026-08-18");
+  assert.equal(range.dates.length, 31);
+  assert.equal(range.dates[14], "2026-08-01");
+  assert.equal(new Set(range.dates).size, 31);
+});
+
+test("el seguimiento diario avanza la ventana y la navegación manual la conserva", () => {
+  assert.deepEqual(
+    reconcileRollingView({ start: "2026-07-18", followsToday: true }, "2026-07-19"),
+    { start: "2026-07-19", followsToday: true },
+  );
+  assert.deepEqual(
+    reconcileRollingView({ start: "2026-06-01", followsToday: false }, "2026-07-19"),
+    { start: "2026-06-01", followsToday: false },
+  );
 });
 
 test("el operador sólo ve avisos pendientes y el administrador conserva la gestión", () => {

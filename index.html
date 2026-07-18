@@ -18,7 +18,7 @@
 
   <link rel="preload" as="image" href="assets/chillan-bg-mobile.jpg" fetchpriority="high" media="(max-width:900px)">
 
-  <link rel="stylesheet" href="styles.css?v=30">
+  <link rel="stylesheet" href="styles.css?v=31">
 </head>
 <body class="locked">
   <div class="bg-layer" aria-hidden="true"></div>
@@ -46,11 +46,10 @@
         <p class="subtitle">Reservas y operaciones</p>
       </div>
       <nav class="nav">
-        <button id="prev" class="btn glass icon" aria-label="Mes anterior">‹</button>
-        <select id="month" class="glass" aria-label="Mes"></select>
-        <select id="year" class="glass" aria-label="Año"></select>
-        <button id="next" class="btn glass icon" aria-label="Mes siguiente">›</button>
-        <button id="today" class="btn glass">Hoy</button>
+        <button id="prev" class="btn glass icon" aria-label="Periodo anterior de 31 días">‹</button>
+        <output id="range-label" class="range-label glass-soft" aria-live="polite"></output>
+        <button id="next" class="btn glass icon" aria-label="Periodo siguiente de 31 días">›</button>
+        <button id="today" class="btn glass">Desde hoy</button>
         <button id="add" class="btn glass primary admin-only" title="Crear nueva reserva">+ Reserva</button>
         <button id="wa-last" class="btn glass wa-btn" disabled title="Abrir bandeja de avisos para Beatriz">📱 Beatriz</button>
         <button id="list" class="btn glass admin-only" title="Ver todas las reservas">📋 Reservas</button>
@@ -255,6 +254,6 @@
   </div>
 
 
-  <script src="app.js?v=30" defer></script>
+  <script src="app.js?v=31" defer></script>
 </body>
 </html>
