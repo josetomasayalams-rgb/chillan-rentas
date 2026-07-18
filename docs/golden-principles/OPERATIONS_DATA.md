@@ -2,7 +2,7 @@
 
 ## Regla
 
-Un arriendo tiene como máximo una tarea de limpieza y su fecha programada corresponde al checkout.
+Toda reserva tiene como máximo una tarea de limpieza y su fecha programada corresponde al checkout. Las manuales se relacionan por `rental_id`; las sincronizadas, por `reservation_id` opaco.
 
 ## Sí
 
@@ -14,17 +14,17 @@ await state.store.upsertCleaning(cleaning);
 ## No
 
 ```js
-// Tareas sueltas no permiten recuperar el arriendo ni preservar el invariante.
+// Tareas sueltas no permiten recuperar la reserva ni preservar el invariante.
 await state.store.upsertCleaning({ scheduled_date: "2026-07-14" });
 ```
 
 ## Excepción
 
-Una tarea puede cancelarse al cancelar un arriendo, pero no debe quedar una tarea activa huérfana.
+Una tarea puede cancelarse al cancelar o retirar una reserva, pero no debe quedar activa sin una reserva identificable.
 
 ## Responsabilidad actual
 
-El cliente conserva hoy esta unicidad al buscar la limpieza existente antes de crear o reemplazar una tarea. La clave foránea elimina limpiezas cuando se borra el arriendo, pero `schema.sql` aún no impone `UNIQUE (rental_id)`.
+El cliente conserva la unicidad manual al buscar la limpieza existente antes de crear o reemplazarla. Para reservas sincronizadas, el esquema impone un índice único parcial sobre `reservation_id` y el cliente usa un UUID determinista derivado de la identidad opaca.
 
 No presentes esa garantía como completamente protegida por la base de datos. El cierre de esta brecha requiere una migración que primero detecte y resuelva duplicados; está registrado en el tracker de deuda técnica.
 

@@ -27,7 +27,7 @@ Las preferencias del dispositivo, como activar o desactivar el bloqueo, pueden u
 Las reservas sanitizadas son un read model externo, no datos de dominio de
 Operaciones. Pasan por `state.calendarSource`, se conservan como última copia
 válida y nunca se insertan en `rentals` ni generan escrituras sobre el
-calendario familiar.
+contrato sanitizado de Airbnb, Booking y reservas particulares.
 
 La identidad HMAC de cada rango sí se usa como clave de
 `beatriz_notifications`. Esta tabla, sus lotes y su historial pertenecen a

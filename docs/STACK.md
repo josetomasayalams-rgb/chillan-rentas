@@ -3,7 +3,7 @@
 - La aplicación se ejecuta desde archivos estáticos; usa HTTP local y no `file://`.
 - Node solo verifica JavaScript y las herramientas del arnés; no ejecuta la PWA.
 - La importación del cliente Supabase es remota y condicional, por lo que el modo local no tiene dependencias.
-- La disponibilidad sanitizada se consulta con `fetch` al contrato público de Reservas familiares.
+- La disponibilidad sanitizada de Airbnb, Booking y particulares se consulta con `fetch` al contrato público `/availability`.
 - `schema.sql` es idempotente y define las garantías que no deben depender solo de JavaScript.
 - No incorpores paquetes de build o lint para resolver una comprobación que los scripts nativos ya cubren.
 - `scripts/architecture.mjs` es la fuente compartida para la allowlist de imports y el formato de errores de frontera.

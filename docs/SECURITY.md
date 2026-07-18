@@ -20,9 +20,9 @@ Las políticas actuales permiten el uso compartido previsto desde el cliente pú
 | --- | --- | --- |
 | Acciones accidentales | bloqueo inicial, modo administrador y confirmaciones | En uso |
 | Escritura no autorizada en el backend | no existe identidad de usuario; las políticas son abiertas | Riesgo aceptado, pendiente de diseño |
-| Datos inconsistentes | restricciones SQL, claves foráneas y transiciones de estado | Parcial; falta unicidad de limpieza por arriendo |
+| Datos inconsistentes | restricciones SQL, claves foráneas, identidad opaca única y transiciones de estado | En uso; la unicidad manual sigue protegida por el cliente |
 | Fallo del backend | degradación a almacenamiento local y aviso visible | En uso |
-| Fuga de proveedor o huésped desde calendarios | `/availability` entrega fechas e identidad HMAC opaca; la UI muestra “Reservado” | En uso |
+| Fuga de proveedor o huésped desde calendarios | `/availability` entrega Airbnb, Booking y particulares como fechas e identidad HMAC opaca; la UI muestra sólo “Reserva” | En uso |
 | Confundir apertura con entrega de WhatsApp | estados separados y confirmación humana posterior | En uso |
 | Texto no confiable | escape antes de insertarlo en la interfaz | En uso |
 
@@ -34,6 +34,6 @@ El despliegue público debe acompañarse con un control de acceso externo si la 
 
 Los mensajes preparados para Beatriz contienen únicamente llegada, salida y
 la solicitud de limpieza. La plataforma no recibe el origen de la reserva,
-familia, huésped, UID ni notas privadas.
+grupo, huésped, UID ni notas privadas.
 
 Comunica incidentes a los administradores de la propiedad sin compartir datos de huéspedes por canales públicos.

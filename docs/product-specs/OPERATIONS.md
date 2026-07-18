@@ -11,10 +11,11 @@ La familia puede consultar arriendos, coordinar la limpieza de salida y dejar co
 
 ## Reglas observables
 
-- Cada arriendo muestra llegada y salida en el calendario.
-- Airbnb, Booking y Reservas familiares aparecen únicamente como “Reservado”,
-  sin fuente, huésped, familia, UID ni notas, y son de solo lectura.
-- Al crear o editar un arriendo, la limpieza corresponde al checkout.
+- Toda estadía aparece como un único tipo “Reserva” de color celeste.
+- Airbnb, Booking y reservas particulares aparecen sin fuente, huésped, grupo,
+  UID ni notas, y son de solo lectura.
+- Cada reserva manual o sincronizada genera automáticamente su limpieza de checkout.
+- La salida permanece visible con su botón hasta confirmar que el aseo está listo.
 - Cada reserva permite preparar un mensaje para Beatriz con llegada, salida y
   solicitud de disponibilidad para la limpieza; WhatsApp requiere confirmación humana.
 - La bandeja selecciona una o varias reservas pendientes y permite preparar un

@@ -4,11 +4,11 @@ La plataforma es una PWA estática con una única unidad de aplicación (`app.js
 
 ## Dominios
 
-- **Arriendos:** períodos, huésped, referencia, estado y notas.
-- **Limpiezas:** una tarea asociada al checkout de cada arriendo.
+- **Reservas manuales:** períodos, huésped, referencia, estado y notas.
+- **Limpiezas:** una tarea asociada al checkout de cada reserva manual o sincronizada.
 - **Comentarios:** notas cronológicas asociadas a una limpieza.
 - **Reservas sanitizadas:** rangos de solo lectura provenientes de Airbnb,
-  Booking y Reservas familiares, visibles únicamente como “Reservado”.
+  Booking y reservas particulares, visibles únicamente como “Reserva”.
 - **Avisos a Beatriz:** estado actual, lotes de WhatsApp e historial auditable
   asociados a identidades opacas de reserva.
 - **Acceso operativo:** bloqueo de la aplicación y modo de administración para acciones de escritura.
@@ -21,7 +21,7 @@ El PIN y la preferencia de bloqueo pertenecen al cliente. Los arriendos, limpiez
 Usuario → presentación estática → app.js → state.store
                                           ├─ localStorage
                                           └─ Supabase (datos y realtime)
-Reservas familiares `/availability` → state.calendarSource → reservas de solo lectura
+`/availability` → state.calendarSource → reservas de Airbnb, Booking y particulares de solo lectura
                                                    ↓
                                reconciliación → state.store → memoria de avisos
 ```
@@ -30,7 +30,7 @@ El esquema SQL conserva los invariantes de estados, relaciones y fechas. Las fro
 
 `state.calendarSource` consume un contrato público que contiene fechas,
 identidades HMAC opacas y frescura. Conserva la última copia válida ante fallos, nunca persiste esas
-entradas en `rentals` y evita mostrar proveedor, familia, huésped, UID o notas.
+entradas en `rentals` y evita mostrar proveedor, grupo, huésped, UID o notas.
 La identidad opaca permite detectar altas, cambios y retiros sin conocer el
 proveedor. La memoria registra por separado “WhatsApp abierto” y “Envío
 confirmado”; los avisos pueden prepararse individualmente o agrupados y siempre
@@ -42,4 +42,4 @@ requieren confirmación humana.
 - `manifest.webmanifest` y `assets/` forman parte del artefacto desplegable.
 - El cliente Supabase se carga de forma remota y condicional; si falla, la aplicación degrada a modo local.
 
-La unicidad lógica entre arriendo y limpieza se mantiene hoy en el cliente. El esquema conserva la relación, pero todavía no impone una restricción `UNIQUE` sobre `rental_id`; esa deuda está registrada en `docs/exec-plans/tech-debt-tracker.md`.
+Las reservas sincronizadas usan `reservation_id` opaco y un índice único para mantener exactamente una limpieza automática. Las reservas manuales conservan su relación por `rental_id`.
