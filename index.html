@@ -18,7 +18,7 @@
 
   <link rel="preload" as="image" href="assets/chillan-bg-mobile.jpg" fetchpriority="high" media="(max-width:900px)">
 
-  <link rel="stylesheet" href="styles.css?v=26">
+  <link rel="stylesheet" href="styles.css?v=27">
 </head>
 <body class="locked">
   <div class="bg-layer" aria-hidden="true"></div>
@@ -43,7 +43,7 @@
     <header class="topbar">
       <div class="title">
         <h1>Departamento Chillán</h1>
-        <p class="subtitle">Arriendos</p>
+        <p class="subtitle">Reservas y operaciones</p>
       </div>
       <nav class="nav">
         <button id="prev" class="btn glass icon" aria-label="Mes anterior">‹</button>
@@ -52,14 +52,15 @@
         <button id="next" class="btn glass icon" aria-label="Mes siguiente">›</button>
         <button id="today" class="btn glass">Hoy</button>
         <button id="add" class="btn glass primary admin-only" title="Crear nuevo arriendo">+ Arriendo</button>
-        <button id="wa-last" class="btn glass wa-btn admin-only" disabled title="Enviar el último arriendo creado a Beatriz por WhatsApp">📱 Último</button>
-        <button id="list" class="btn glass admin-only" title="Ver / editar / cancelar arriendos">📋 Arriendos</button>
+        <button id="wa-last" class="btn glass wa-btn admin-only" disabled title="Preparar mensaje para Beatriz sobre la próxima reserva">📱 Próxima</button>
+        <button id="list" class="btn glass admin-only" title="Ver reservas sincronizadas y arriendos operativos">📋 Reservas</button>
         <button id="undo" class="btn glass" disabled title="No hay nada que deshacer">↩ Deshacer</button>
       </nav>
     </header>
 
-    <section class="legend glass-soft" id="legend" aria-label="Arriendo" hidden>
+    <section class="legend glass-soft" id="legend" aria-label="Tipos de reserva">
       <span class="chip"><span class="dot" style="background:#6366F1"></span>Arriendo</span>
+      <span class="chip"><span class="dot" style="background:#0EA5E9"></span>Reservado</span>
     </section>
 
     <div class="hint-bar glass-soft active" id="hint-bar">Tocá un arriendo para ver detalles · en el día de salida, tocá el círculo verde para marcar la tarea hecha</div>
@@ -80,6 +81,7 @@
 
     <footer class="foot">
       <span id="mode-badge" class="mode-badge"></span>
+      <span id="calendar-badge" class="mode-badge calendar-badge">○ Cargando calendarios…</span>
       <button id="lock-toggle" class="btn glass lock-btn admin-only" title="Lock al iniciar (solo admin)">🔒 Con clave</button>
       <button id="admin" class="btn glass admin-btn" title="Entrar al modo administrador">🔒 Entrar como admin</button>
     </footer>
@@ -207,8 +209,8 @@
   <!-- Modal: lista de arriendos (admin only) — editar / cancelar / enviar a WhatsApp -->
   <div class="modal-overlay" id="list-modal" hidden>
     <div class="modal glass modal-wide" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="list-title">
-      <h2 id="list-title">📋 Arriendos</h2>
-      <p class="modal-tip">Lista completa. Toca ✏️ para editar, 📱 para avisar a Beatriz, o cancelar.</p>
+      <h2 id="list-title">📋 Reservas y arriendos</h2>
+      <p class="modal-tip">Las reservas sincronizadas son de solo lectura. Puedes preparar el mensaje de limpieza para Beatriz desde cualquier fila.</p>
       <div class="rentals-list" id="rentals-list"></div>
       <div class="modal-actions">
         <button class="btn ghost" id="list-close" type="button">Cerrar</button>
@@ -217,6 +219,6 @@
   </div>
 
 
-  <script src="app.js?v=26" defer></script>
+  <script src="app.js?v=27" defer></script>
 </body>
 </html>
