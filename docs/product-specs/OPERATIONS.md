@@ -11,7 +11,9 @@ La familia puede consultar arriendos, coordinar la limpieza de salida y dejar co
 
 ## Reglas observables
 
-- Toda estadía aparece como un único tipo “Reserva” de color celeste.
+- Toda estadía aparece como un único tipo “Reserva”; las consecutivas alternan
+  dos tonos estables sin que el color revele su plataforma de origen.
+- Cada barra muestra explícitamente check-in 15:00 y check-out 12:00.
 - Airbnb, Booking y reservas particulares aparecen sin fuente, huésped, grupo,
   UID ni notas, y son de solo lectura.
 - Cada reserva manual o sincronizada genera automáticamente su limpieza de checkout.
@@ -20,6 +22,8 @@ La familia puede consultar arriendos, coordinar la limpieza de salida y dejar co
   solicitud de disponibilidad para la limpieza; WhatsApp requiere confirmación humana.
 - La bandeja selecciona una o varias reservas pendientes y permite preparar un
   mensaje agrupado o mensajes separados.
+- El operador sin modo administrador sólo ve los avisos pendientes. Preparar,
+  abrir, confirmar, corregir o reenviar mensajes requiere modo administrador.
 - La plataforma distingue “Pendiente”, “WhatsApp abierto”, “Envío confirmado”
   y “Requiere nuevo aviso por cambio”; abrir WhatsApp nunca confirma el envío.
 - La confirmación se comparte por Supabase, conserva historial y puede

@@ -17,7 +17,7 @@
   --text-faint: rgba(255,255,255,.65);
   --warn: #f59e0b;
   --shadow: 0 10px 40px rgba(0,0,0,.35);
-  --brush: #38BDF8;   /* celeste único para selección y reservas */
+  --brush: #38BDF8;
 }
 
 *{ box-sizing:border-box; }
@@ -160,6 +160,8 @@ body.admin-mode .admin-only{ display:inline-flex; }
 .cell.past .cell-ticket{ box-shadow:none; }   /* sombra del ticket done se atenúa en pasado */
 .chip{ display:inline-flex; align-items:center; gap:7px; font-size:13px; color:var(--text-dim); }
 .dot{ width:12px; height:12px; border-radius:50%; box-shadow:0 0 0 1px rgba(255,255,255,.25); }
+.legend-tones{ display:inline-flex; align-items:center; }
+.legend-tones .dot + .dot{ margin-left:-3px; }
 
 .hint-bar{
   text-align:center; font-size:13px; color:var(--text-dim);
@@ -310,12 +312,15 @@ body.admin-mode .admin-only{ display:inline-flex; }
 
 .segments{ position:absolute; left:4px; right:4px; top:26px; display:flex; flex-direction:column; gap:3px; pointer-events:none; }
 .seg{
-  height:clamp(13px, 1.4vw, 18px); border-radius:0; display:flex; align-items:center; padding:0 6px;
+  height:clamp(13px, 1.4vw, 18px); border-radius:0; display:flex; align-items:center; gap:4px; padding:0 6px;
   font-size:clamp(9.5px, 1.05vw, 12px); font-weight:600; color:#fff; white-space:nowrap; overflow:hidden;
   pointer-events:auto; cursor:pointer;
   text-shadow:0 1px 1px rgba(0,0,0,.35);
   box-shadow:0 1px 3px rgba(0,0,0,.25);
 }
+.seg-kind, .seg-time{ display:block; min-width:0; }
+.seg-kind{ overflow:hidden; text-overflow:ellipsis; }
+.seg-time{ flex:0 0 auto; font-variant-numeric:tabular-nums; font-weight:800; }
 .seg.start{ border-top-left-radius:7px; border-bottom-left-radius:7px; }
 .seg.end{ border-top-right-radius:7px; border-bottom-right-radius:7px; }
 .seg.pill{ border-radius:7px; }
@@ -849,7 +854,15 @@ body.locked .app{
   .weekdays div{ padding:4px 0; }
   .cell{ min-height:76px; padding:5px 4px 22px; border-radius:9px; }
   .segments{ top:21px; left:3px; right:3px; gap:3px; }
-  .seg{ min-height:16px; padding:1px 4px; font-size:9px; }
+  .cell.lanes-1{ min-height:92px; }
+  .cell.lanes-2{ min-height:118px; }
+  .cell.lanes-3{ min-height:146px; }
+  .seg{
+    height:27px; min-height:27px; padding:1px 0; gap:0;
+    flex-direction:column; justify-content:center; line-height:1; white-space:normal;
+  }
+  .seg-kind{ width:100%; text-align:center; font-size:clamp(6px, 1.65vw, 7px); line-height:1; overflow:visible; text-overflow:clip; }
+  .seg-time{ width:100%; text-align:center; font-size:9px; line-height:1.05; }
   .cell-ticket{ bottom:5px; width:27px; height:27px; }
   .brush-bar{ bottom:calc(8px + env(safe-area-inset-bottom)); }
   .foot{ gap:7px; margin-top:12px; }

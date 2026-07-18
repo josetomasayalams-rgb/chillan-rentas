@@ -5,17 +5,22 @@ import app from "../app.js";
 const {
   buildGroupedWhatsAppMessage,
   buildNotificationMessages,
+  buildReservationToneMap,
   buildWhatsAppMessage,
   calendarReservationsWithoutManualDuplicates,
   calendarRangesToRentals,
   cleaningForRental,
   cleaningIdForReservation,
+  isNotificationVisibleForRole,
   mergeCalendarReservationHistory,
   normalizeAvailabilityPayload,
   planBatchResolution,
   planCalendarCleaningReconciliation,
   planNotificationReconciliation,
+  reservationTone,
   sourceMeta,
+  CHECKIN_TIME,
+  CHECKOUT_TIME,
 } = app;
 
 const ID_A = `rsv_${"a".repeat(32)}`;
@@ -69,9 +74,40 @@ test("convierte calendarios en reservas opacas, estables y de solo lectura", () 
   assert.equal(first.reference, null);
 });
 
-test("muestra toda estadía como una única reserva celeste", () => {
-  assert.deepEqual(sourceMeta("direct"), { name: "Reserva", color: "#38BDF8" });
+test("mantiene un único tipo visual de reserva sin revelar su plataforma", () => {
+  assert.deepEqual(sourceMeta("direct"), { name: "Reserva", color: "#0369A1" });
   assert.deepEqual(sourceMeta("calendar"), sourceMeta("direct"));
+});
+
+test("alterna tonos de forma cronológica y conserva el tono durante cada estadía", () => {
+  const rentals = [
+    { id: "manual-c", checkin_date: "2026-08-10", checkout_date: "2026-08-12" },
+    { id: "manual-a", checkin_date: "2026-08-01", checkout_date: "2026-08-03" },
+    { id: "manual-b", checkin_date: "2026-08-05", checkout_date: "2026-08-07" },
+  ];
+  const toneMap = buildReservationToneMap(rentals);
+  assert.equal(reservationTone(rentals[1], toneMap).index, 0);
+  assert.equal(reservationTone(rentals[2], toneMap).index, 1);
+  assert.equal(reservationTone(rentals[0], toneMap).index, 0);
+  assert.equal(reservationTone(rentals[2], toneMap).color, "#6D28D9");
+});
+
+test("usa explícitamente check-in 15:00 y check-out 12:00", () => {
+  assert.equal(CHECKIN_TIME, "15:00");
+  assert.equal(CHECKOUT_TIME, "12:00");
+});
+
+test("el operador sólo ve avisos pendientes y el administrador conserva la gestión", () => {
+  const pending = { is_active: true, status: "pending" };
+  const changed = { is_active: true, status: "needs_update" };
+  const opened = { is_active: true, status: "opened" };
+  const confirmed = { is_active: true, status: "confirmed" };
+  assert.equal(isNotificationVisibleForRole(pending, false), true);
+  assert.equal(isNotificationVisibleForRole(changed, false), true);
+  assert.equal(isNotificationVisibleForRole(opened, false), false);
+  assert.equal(isNotificationVisibleForRole(confirmed, false), false);
+  assert.equal(isNotificationVisibleForRole(opened, true), true);
+  assert.equal(isNotificationVisibleForRole(confirmed, true), true);
 });
 
 test("evita duplicar una reserva sincronizada ya registrada manualmente", () => {
@@ -237,8 +273,8 @@ test("genera mensajes individuales y agrupados sin filtrar datos privados", () =
   assert.match(individual, /Hola Beatriz/);
   assert.match(individual, /Limpieza: 3 ago desde las 12:00/);
   const grouped = buildGroupedWhatsAppMessage(rentals);
-  assert.match(grouped, /1\. 1 ago 16:00 → 3 ago 12:00/);
-  assert.match(grouped, /2\. 7 ago 16:00 → 9 ago 12:00/);
+  assert.match(grouped, /1\. Check-in 1 ago 15:00 → Check-out 3 ago 12:00/);
+  assert.match(grouped, /2\. Check-in 7 ago 15:00 → Check-out 9 ago 12:00/);
   assert.equal(buildNotificationMessages(rentals, "individual").length, 2);
   assert.equal(buildNotificationMessages(rentals, "grouped").length, 1);
   assert.doesNotMatch(`${individual}\n${grouped}`, /Airbnb|Booking|familia|Privado/i);

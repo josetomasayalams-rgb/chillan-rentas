@@ -10,8 +10,9 @@ Resultados esperados:
 
 En un navegador, verifica el bloqueo, el desbloqueo, el modo administrador, creación/edición/cancelación de un arriendo y la transición de la limpieza generada. Repite en modo local y, si está autorizado, en modo remoto.
 
-Comprueba además que Airbnb, Booking y particulares usen el mismo color celeste,
-que cada reserva sincronizada tenga un botón de aseo en checkout y que una
+Comprueba además que Airbnb, Booking y particulares usen el mismo tipo “Reserva”,
+que las estadías consecutivas alternen tonos sin cambiar de color durante su
+duración, que cada reserva sincronizada tenga un botón de aseo en checkout y que una
 estadía finalizada permanezca visible hasta confirmar la limpieza.
 
 Para la bandeja de Beatriz, sin enviar un mensaje real, verifica:
@@ -23,5 +24,10 @@ Para la bandeja de Beatriz, sin enviar un mensaje real, verifica:
 5. corrección de una confirmación y reenvío explícito;
 6. persistencia después de recargar y ausencia de fuente, huésped, UID o notas;
 7. diseño sin desborde en un viewport móvil.
+
+En un viewport de 390 px confirma además que los extremos muestren completos
+`Check-in 15:00` y `Check-out 12:00`. Sin modo administrador, la bandeja de
+Beatriz debe conservar el botón y el conteo de pendientes, pero no debe mostrar
+checkboxes, mensajes ya abiertos/confirmados ni controles para preparar o corregir.
 
 Si falla una frontera, sigue la ruta de remediación incluida en el mensaje y no extiendas `known-violations.json`. Una violación heredada solo podría entrar en la línea base durante una inicialización explícita del arnés.

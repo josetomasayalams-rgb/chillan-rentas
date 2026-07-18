@@ -32,7 +32,9 @@ const CONFIG = {
   adminPin:       "2407",
 
   reservationLabel: "Reserva",
-  reservationColor: "#38BDF8", // celeste único para toda estadía
+  // Dos tonos accesibles que se alternan por estadía, no por plataforma.
+  // Así una misma reserva conserva su color desde el check-in al check-out.
+  reservationTones: ["#0369A1", "#6D28D9"],
   // Orden estable para "lanes" en celdas con varios arriendos.
   // Incluye todos los valores posibles del CHECK del schema (más "arriendo" futuro).
   sourceOrder:   ["calendar","direct","airbnb","booking","other","arriendo"],
@@ -44,7 +46,7 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "29";
+const VERSION = "30";
 const MONTHS  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -111,7 +113,30 @@ function todayIso(){
 function sourceMeta(s){
   // La fuente se conserva internamente para respetar la frontera de solo
   // lectura, pero visualmente sólo existe un tipo de reserva.
-  return { name: CONFIG.reservationLabel, color: CONFIG.reservationColor };
+  return { name: CONFIG.reservationLabel, color: CONFIG.reservationTones[0] };
+}
+function reservationVisualId(rental){
+  return rental?.reservationId || rental?.id || `${rental?.checkin_date || ""}:${rental?.checkout_date || ""}`;
+}
+function compareReservations(left, right){
+  return (left.checkin_date || "").localeCompare(right.checkin_date || "")
+    || (left.checkout_date || "").localeCompare(right.checkout_date || "")
+    || reservationVisualId(left).localeCompare(reservationVisualId(right));
+}
+function buildReservationToneMap(rentals){
+  const tones = new Map();
+  [...(rentals || [])]
+    .filter(rental => rental?.status !== "cancelled")
+    .sort(compareReservations)
+    .forEach(rental => {
+      const id = reservationVisualId(rental);
+      if (!tones.has(id)) tones.set(id, tones.size % CONFIG.reservationTones.length);
+    });
+  return tones;
+}
+function reservationTone(rental, toneMap){
+  const index = toneMap?.get(reservationVisualId(rental)) ?? 0;
+  return { index, color: CONFIG.reservationTones[index] || CONFIG.reservationTones[0] };
 }
 function sourceOrderIdx(s){
   const i = CONFIG.sourceOrder.indexOf(s);
@@ -366,6 +391,9 @@ const NOTIFICATION_LABELS = {
 function isNotificationActionable(notification){
   return !!notification?.is_active && ["pending", "needs_update"].includes(notification.status);
 }
+function isNotificationVisibleForRole(notification, isAdmin){
+  return !!notification?.is_active && (isAdmin || isNotificationActionable(notification));
+}
 
 function planNotificationReconciliation(existing, reservations, options = {}){
   const nowIso = options.nowIso || new Date().toISOString();
@@ -460,7 +488,7 @@ function rentalsForDisplay(){
 // Horarios fijos por convención. La app no los guarda en la DB; se muestran
 // siempre igual en los bordes de las barras. Si en el futuro hay que hacerlos
 // editables por rental, se agregan campos a la tabla `rentals`.
-const CHECKIN_TIME  = "16:00";
+const CHECKIN_TIME  = "15:00";
 const CHECKOUT_TIME = "12:00";
 
 // Feedback háptico (vibración corta). En navegadores sin soporte es no-op.
@@ -1115,8 +1143,8 @@ function renderBrushBar(){
   }
   bar.classList.add("show");
   const range = b.end
-    ? `Llegada ${prettyShort(b.start)} 16:00 → Salida ${prettyShort(b.end)} 12:00`
-    : `Llegada ${prettyShort(b.start)} 16:00 · toca el día de salida`;
+    ? `Check-in ${prettyShort(b.start)} ${CHECKIN_TIME} → Check-out ${prettyShort(b.end)} ${CHECKOUT_TIME}`
+    : `Check-in ${prettyShort(b.start)} ${CHECKIN_TIME} · toca el día de salida`;
   bar.querySelector(".bb-range").textContent = range;
   bar.querySelector("#brush-confirm").disabled = !b.end;
   bar.querySelector("#brush-details").disabled = !b.end;
@@ -1241,17 +1269,16 @@ function renderNav(){
 function renderLegend(){
   const el = document.getElementById("legend");
   el.hidden = false;
-  const reservation = sourceMeta("reservation");
-  el.innerHTML = `<span class="chip"><span class="dot" style="background:${reservation.color}"></span>${escapeHtml(reservation.name)}</span>`;
+  el.innerHTML = `<span class="chip reservation-legend"><span class="legend-tones"><span class="dot" style="background:${CONFIG.reservationTones[0]}"></span><span class="dot" style="background:${CONFIG.reservationTones[1]}"></span></span>Reservas · tonos alternados</span>`;
 }
 
 function renderHint(){
   const el = document.getElementById("hint-bar");
   if (state.admin){
     if (!state.brush.start){
-      el.textContent = "Modo admin · toca un día para marcar llegada 16:00 · toca otro día para salida 12:00";
+      el.textContent = `Modo admin · toca un día para marcar check-in ${CHECKIN_TIME} · toca otro día para check-out ${CHECKOUT_TIME}`;
     } else if (state.brush.start && !state.brush.end){
-      el.textContent = "Toca el día de salida (12:00)";
+      el.textContent = `Toca el día de check-out (${CHECKOUT_TIME})`;
     } else {
       el.textContent = "Listo · confirma la reserva o agrega detalles";
     }
@@ -1270,6 +1297,7 @@ function renderGrid(){
   const n = new Date();
   const todayStr = isoOf(n.getFullYear(), n.getMonth(), n.getDate());
   const displayRentals = rentalsForDisplay();
+  const toneMap = buildReservationToneMap(displayRentals);
 
   const grid = document.getElementById("grid");
   grid.innerHTML = "";
@@ -1312,28 +1340,39 @@ function renderGrid(){
       .filter(r => r.status !== "cancelled"
                 && r.checkin_date <= dateStr
                 && r.checkout_date >= dateStr)
-      .sort((a,b) => sourceOrderIdx(a.source) - sourceOrderIdx(b.source));
+      .sort(compareReservations);
 
     if (dayRentals.length){
       cell.classList.add("occupied");
-      cell.style.setProperty("--fill-color", sourceMeta(dayRentals[0].source).color);
+      cell.classList.add(`lanes-${Math.min(dayRentals.length, CONFIG.maxLanes)}`);
+      cell.style.setProperty("--fill-color", reservationTone(dayRentals[0], toneMap).color);
     }
 
     const segs = document.createElement("div");
     segs.className = "segments";
     dayRentals.slice(0, CONFIG.maxLanes).forEach(r => {
       const meta = sourceMeta(r.source);
+      const tone = reservationTone(r, toneMap);
       const isStart = r.checkin_date === dateStr;
       const isEnd   = r.checkout_date === dateStr;
       const cls = ["seg", isStart && "start", isEnd && "end",
-                   (isStart && isEnd) && "pill"].filter(Boolean).join(" ");
+                   (isStart && isEnd) && "pill", `reservation-tone-${tone.index + 1}`].filter(Boolean).join(" ");
       const seg = document.createElement("div");
       seg.className = cls;
-      seg.style.background = meta.color;
-      const label = isStart
-        ? `Reserva · ${CHECKIN_TIME}`
-        : isEnd ? CHECKOUT_TIME : "Reserva";
-      seg.textContent = label;
+      seg.style.background = tone.color;
+      const kind = document.createElement("span");
+      kind.className = "seg-kind";
+      kind.textContent = isStart ? "Check-in" : isEnd ? "Check-out" : "Reserva";
+      seg.appendChild(kind);
+      if (isStart || isEnd){
+        const time = document.createElement("span");
+        time.className = "seg-time";
+        time.textContent = isStart ? CHECKIN_TIME : CHECKOUT_TIME;
+        seg.appendChild(time);
+      }
+      seg.setAttribute("aria-label", isStart
+        ? `Check-in ${CHECKIN_TIME}`
+        : isEnd ? `Check-out ${CHECKOUT_TIME}` : "Reserva en curso");
       seg.dataset.id = r.id;
       seg.title = `${meta.name} · ${r.checkin_date} ${CHECKIN_TIME} → ${r.checkout_date} ${CHECKOUT_TIME}${!r.readOnly && r.guest_name ? " · " + r.guest_name : ""}`;
       seg.addEventListener("click", e => { e.stopPropagation(); openPopover(r, seg); });
@@ -1407,8 +1446,8 @@ function openPopover(r, anchor){
       <span class="dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${meta.color};margin-right:6px"></span>
       ${escapeHtml(meta.name)}${!r.readOnly && r.reference ? ` · ${escapeHtml(r.reference)}` : ""}
     </div>
-    <div class="prow"><span>Llegada</span><b>${escapeHtml(prettyShort(r.checkin_date))} 16:00</b></div>
-    <div class="prow"><span>Salida</span><b>${escapeHtml(prettyShort(r.checkout_date))} 12:00</b></div>
+    <div class="prow"><span>Check-in</span><b>${escapeHtml(prettyShort(r.checkin_date))} ${CHECKIN_TIME}</b></div>
+    <div class="prow"><span>Check-out</span><b>${escapeHtml(prettyShort(r.checkout_date))} ${CHECKOUT_TIME}</b></div>
     ${!r.readOnly && r.guest_name ? `<div class="prow"><span>Huesped</span><b>${escapeHtml(r.guest_name)}</b></div>` : ""}
     ${cleaningLine}
     ${!r.readOnly && r.notes ? `<div class="prow"><span>Nota</span><b>${escapeHtml(r.notes)}</b></div>` : ""}
@@ -1446,9 +1485,9 @@ function buildWhatsAppMessage(r){
   return [
     "Hola Beatriz, espero que estés bien. Te aviso de una reserva confirmada en el departamento de Chillán.",
     "",
-    `• Llegada: ${prettyShort(r.checkin_date)} · 16:00`,
-    `• Salida: ${prettyShort(r.checkout_date)} · 12:00`,
-    `• Limpieza: ${prettyShort(r.checkout_date)} desde las 12:00`,
+    `• Check-in: ${prettyShort(r.checkin_date)} · ${CHECKIN_TIME}`,
+    `• Check-out: ${prettyShort(r.checkout_date)} · ${CHECKOUT_TIME}`,
+    `• Limpieza: ${prettyShort(r.checkout_date)} desde las ${CHECKOUT_TIME}`,
     "",
     "¿Puedes confirmarme si tienes disponibilidad para realizar la limpieza de salida? Gracias.",
   ].join("\n");
@@ -1460,8 +1499,8 @@ function buildGroupedWhatsAppMessage(rentals){
     "",
   ];
   rentals.forEach((rental, index) => {
-    lines.push(`${index + 1}. ${prettyShort(rental.checkin_date)} 16:00 → ${prettyShort(rental.checkout_date)} 12:00`);
-    lines.push(`   Limpieza: ${prettyShort(rental.checkout_date)} desde las 12:00`);
+    lines.push(`${index + 1}. Check-in ${prettyShort(rental.checkin_date)} ${CHECKIN_TIME} → Check-out ${prettyShort(rental.checkout_date)} ${CHECKOUT_TIME}`);
+    lines.push(`   Limpieza: ${prettyShort(rental.checkout_date)} desde las ${CHECKOUT_TIME}`);
   });
   lines.push("", "¿Puedes confirmarme tu disponibilidad para estas limpiezas de salida? Gracias.");
   return lines.join("\n");
@@ -1528,6 +1567,7 @@ async function recordNotificationBatchOpened(rentals, mode){
 }
 
 async function openNotificationWhatsApp(rentals, mode="individual"){
+  if (!state.admin) return;
   const phone = (CONFIG.beatrizWhatsApp || "").replace(/[^\d]/g, "");
   if (!phone || !rentals.length) return;
   const message = mode === "grouped" ? buildGroupedWhatsAppMessage(rentals) : buildWhatsAppMessage(rentals[0]);
@@ -1646,7 +1686,9 @@ function updateWaLastBtn(){
   const btn = document.getElementById("wa-last");
   if (!btn) return;
   const pending = activeNotificationRentals().length;
-  const opened = state.notifications.filter(item => item.is_active && item.status === "opened").length;
+  const opened = state.admin
+    ? state.notifications.filter(item => item.is_active && item.status === "opened").length
+    : 0;
   btn.disabled = pending + opened === 0;
   btn.textContent = pending ? `📱 Beatriz · ${pending}` : opened ? `📱 Confirmar · ${opened}` : "📱 Beatriz";
   btn.title = pending
@@ -1724,7 +1766,7 @@ async function correctNotificationConfirmation(reservationId){
 }
 
 function showWhatsAppConfirmation(batch){
-  if (!batch) return;
+  if (!state.admin || !batch) return;
   const modal = document.getElementById("whatsapp-confirm-modal");
   const rentals = batch.reservation_ids
     .map(id => state.calendarReservations.find(rental => rental.reservationId === id))
@@ -1744,6 +1786,7 @@ function closeWhatsAppConfirmation(){
 }
 
 function maybeShowWhatsAppConfirmation(){
+  if (!state.admin) return;
   const batch = state.pendingWhatsAppBatch;
   if (!batch || batch.status !== "opened") return;
   if (Date.now() - new Date(batch.opened_at).getTime() < 700) return;
@@ -1751,7 +1794,9 @@ function maybeShowWhatsAppConfirmation(){
 }
 
 function openBeatrizInbox(){
-  state.inboxSelection = new Set(activeNotificationRentals().map(rental => rental.reservationId));
+  state.inboxSelection = state.admin
+    ? new Set(activeNotificationRentals().map(rental => rental.reservationId))
+    : new Set();
   state.separateQueue = [];
   document.getElementById("beatriz-modal").hidden = false;
   renderBeatrizInbox();
@@ -1765,45 +1810,59 @@ function closeBeatrizInbox(){
 function renderBeatrizInbox(){
   const modal = document.getElementById("beatriz-modal");
   if (!modal || modal.hidden) return;
+  const canManage = state.admin;
   const list = document.getElementById("beatriz-list");
-  const includeConfirmed = !!document.getElementById("beatriz-include-confirmed")?.checked;
+  const includeConfirmedControl = document.getElementById("beatriz-include-confirmed");
+  const includeConfirmed = canManage && !!includeConfirmedControl?.checked;
+  modal.querySelectorAll("[data-beatriz-admin]").forEach(control => { control.hidden = !canManage; });
+  if (!canManage){
+    state.inboxSelection.clear();
+    state.separateQueue = [];
+    if (includeConfirmedControl) includeConfirmedControl.checked = false;
+  }
   const rentals = state.calendarReservations
     .map(rental => ({ rental, notification: notificationForReservation(rental.reservationId) }))
-    .filter(item => item.notification?.is_active)
+    .filter(item => isNotificationVisibleForRole(item.notification, canManage))
     .sort((left, right) => left.rental.checkin_date.localeCompare(right.rental.checkin_date));
   const actionableCount = rentals.filter(item => isNotificationActionable(item.notification)).length;
   const openedCount = rentals.filter(item => item.notification.status === "opened").length;
-  document.getElementById("beatriz-summary").textContent = actionableCount
-    ? `${actionableCount} reserva${actionableCount === 1 ? "" : "s"} pendiente${actionableCount === 1 ? "" : "s"} de aviso.`
-    : openedCount ? `${openedCount} mensaje${openedCount === 1 ? "" : "s"} por confirmar.` : "No hay avisos pendientes.";
+  document.getElementById("beatriz-summary").textContent = !canManage
+    ? actionableCount
+      ? `${actionableCount} reserva${actionableCount === 1 ? "" : "s"} pendiente${actionableCount === 1 ? "" : "s"} de aviso. Solo el administrador puede preparar mensajes.`
+      : "No hay avisos pendientes."
+    : actionableCount
+      ? `${actionableCount} reserva${actionableCount === 1 ? "" : "s"} pendiente${actionableCount === 1 ? "" : "s"} de aviso.`
+      : openedCount ? `${openedCount} mensaje${openedCount === 1 ? "" : "s"} por confirmar.` : "No hay avisos pendientes.";
 
   list.innerHTML = rentals.length ? rentals.map(({ rental, notification }) => {
-    const selectable = isNotificationActionable(notification) || (includeConfirmed && notification.status === "confirmed");
+    const selectable = canManage && (isNotificationActionable(notification) || (includeConfirmed && notification.status === "confirmed"));
     const checked = state.inboxSelection.has(rental.reservationId);
     return `
       <article class="beatriz-row status-${escapeHtml(notification.status)}">
         <label class="beatriz-select">
           ${selectable ? `<input type="checkbox" data-reservation-id="${escapeHtml(rental.reservationId)}" ${checked ? "checked" : ""}>` : '<span class="selection-placeholder"></span>'}
           <span>
-            <strong>${escapeHtml(prettyShort(rental.checkin_date))} 16:00 → ${escapeHtml(prettyShort(rental.checkout_date))} 12:00</strong>
-            <small>Limpieza desde las 12:00</small>
+            <strong>Check-in ${escapeHtml(prettyShort(rental.checkin_date))} ${CHECKIN_TIME} → Check-out ${escapeHtml(prettyShort(rental.checkout_date))} ${CHECKOUT_TIME}</strong>
+            <small>Limpieza desde las ${CHECKOUT_TIME}</small>
           </span>
         </label>
         <div class="beatriz-row-state">
           <span class="notification-status">${escapeHtml(NOTIFICATION_LABELS[notification.status] || notification.status)}</span>
-          ${notification.status === "opened" ? `<button class="pbtn" data-act="confirm-opened" data-batch-id="${escapeHtml(notification.last_batch_id || "")}">Confirmar envío</button>` : ""}
-          ${notification.status === "confirmed" ? `<button class="pbtn ghost" data-act="correct" data-reservation-id="${escapeHtml(rental.reservationId)}">Corregir</button>` : ""}
+          ${canManage && notification.status === "opened" ? `<button class="pbtn" data-act="confirm-opened" data-batch-id="${escapeHtml(notification.last_batch_id || "")}">Confirmar envío</button>` : ""}
+          ${canManage && notification.status === "confirmed" ? `<button class="pbtn ghost" data-act="correct" data-reservation-id="${escapeHtml(rental.reservationId)}">Corregir</button>` : ""}
         </div>
       </article>`;
   }).join("") : '<p class="empty-row">Aún no hay reservas sincronizadas para coordinar.</p>';
 
-  const selected = [...state.inboxSelection].filter(id => rentals.some(item => item.rental.reservationId === id));
+  const selected = canManage
+    ? [...state.inboxSelection].filter(id => rentals.some(item => item.rental.reservationId === id))
+    : [];
   const prepare = document.getElementById("beatriz-prepare");
   prepare.disabled = selected.length === 0;
   prepare.textContent = selected.length ? `Preparar ${selected.length} aviso${selected.length === 1 ? "" : "s"}` : "Selecciona reservas";
 
   const queue = document.getElementById("beatriz-separate-queue");
-  if (state.separateQueue.length){
+  if (canManage && state.separateQueue.length){
     queue.hidden = false;
     queue.innerHTML = `<strong>Mensajes separados</strong>${state.separateQueue.map(id => {
       const rental = state.calendarReservations.find(item => item.reservationId === id);
@@ -1839,7 +1898,7 @@ function openRentalsList(){
         <div class="rental-row${r.status === "cancelled" ? " is-cancelled" : ""}" data-id="${r.id}">
           <div class="rl-info">
             <span class="rl-dot" style="background:${meta.color}"></span>
-            <span class="rl-dates"><strong>${escapeHtml(prettyShort(r.checkin_date))}</strong> 16:00 → <strong>${escapeHtml(prettyShort(r.checkout_date))}</strong> 12:00</span>
+            <span class="rl-dates"><strong>${escapeHtml(prettyShort(r.checkin_date))}</strong> ${CHECKIN_TIME} → <strong>${escapeHtml(prettyShort(r.checkout_date))}</strong> ${CHECKOUT_TIME}</span>
             ${r.guest_name ? `<span class="rl-meta">· ${escapeHtml(r.guest_name)}</span>` : ""}
             ${r.reference ? `<span class="rl-meta">· ${escapeHtml(r.reference)}</span>` : ""}
             ${r.readOnly ? `<span class="rl-badge synced">Reserva · sincronizada</span>` : ""}
@@ -2329,6 +2388,8 @@ function updateAdminUI(){
     btn.classList.toggle("on", state.admin);
   }
   document.body.classList.toggle("admin-mode", state.admin);
+  updateWaLastBtn();
+  if (!document.getElementById("beatriz-modal")?.hidden) renderBeatrizInbox();
 }
 
 // ---------- Lock ----------
@@ -2507,6 +2568,7 @@ function bind(){
     if (event.target.id === "beatriz-modal") return closeBeatrizInbox();
     const action = event.target.closest("[data-act]");
     if (!action) return;
+    if (!state.admin) return;
     if (action.dataset.act === "open-separate"){
       const rental = state.calendarReservations.find(item => item.reservationId === action.dataset.reservationId);
       if (!rental) return;
@@ -2522,6 +2584,7 @@ function bind(){
     }
   });
   document.getElementById("beatriz-modal").addEventListener("change", event => {
+    if (!state.admin) return;
     if (event.target.id === "beatriz-include-confirmed") return renderBeatrizInbox();
     if (event.target.matches('input[type="checkbox"][data-reservation-id]')){
       if (event.target.checked) state.inboxSelection.add(event.target.dataset.reservationId);
@@ -2530,6 +2593,7 @@ function bind(){
     }
   });
   document.getElementById("beatriz-prepare").addEventListener("click", async () => {
+    if (!state.admin) return;
     const rentals = [...state.inboxSelection]
       .map(id => state.calendarReservations.find(item => item.reservationId === id))
       .filter(Boolean);
@@ -2543,10 +2607,12 @@ function bind(){
     await openNotificationWhatsApp(rentals, "grouped");
   });
   document.getElementById("whatsapp-sent").addEventListener("click", async () => {
+    if (!state.admin) return;
     const id = document.getElementById("whatsapp-confirm-modal").dataset.batchId;
     await resolveNotificationBatch(state.notificationBatches.find(item => item.id === id), true);
   });
   document.getElementById("whatsapp-not-sent").addEventListener("click", async () => {
+    if (!state.admin) return;
     const id = document.getElementById("whatsapp-confirm-modal").dataset.batchId;
     await resolveNotificationBatch(state.notificationBatches.find(item => item.id === id), false);
   });
@@ -2662,16 +2728,21 @@ if (typeof module !== "undefined" && module.exports){
     buildGroupedWhatsAppMessage,
     buildNotificationMessages,
     buildWhatsAppMessage,
+    buildReservationToneMap,
     calendarReservationsWithoutManualDuplicates,
     calendarRangesToRentals,
     cleaningForRental,
     cleaningIdForReservation,
     isValidIsoDate,
+    isNotificationVisibleForRole,
     mergeCalendarReservationHistory,
     normalizeAvailabilityPayload,
     planBatchResolution,
     planCalendarCleaningReconciliation,
     planNotificationReconciliation,
+    reservationTone,
     sourceMeta,
+    CHECKIN_TIME,
+    CHECKOUT_TIME,
   };
 }

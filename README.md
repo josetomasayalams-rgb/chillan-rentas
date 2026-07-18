@@ -1,6 +1,6 @@
 # chillan-rentas
 
-Plataforma de operaciones para el departamento de Chillán. Vista mobile-first con un único tipo de reserva celeste, tareas de aseo generadas automáticamente al checkout y reservas sanitizadas de Airbnb, Booking y particulares.
+Plataforma de operaciones para el departamento de Chillán. Vista mobile-first con un único tipo de reserva en tonos alternados, tareas de aseo generadas automáticamente al check-out y reservas sanitizadas de Airbnb, Booking y particulares.
 
 Stack: **vanilla JS, no build, no framework.** Tres archivos (`index.html` + `app.js` + `styles.css`) + assets + schema SQL. Se sirve con cualquier static server.
 
@@ -30,13 +30,14 @@ PIN admin: `2407` (cambiar en `app.js` → `CONFIG.adminPin`).
 
 ## Cómo se usa
 
-- **Vista móvil** (`/`, en celular): PIN → calendario. Toda estadía se muestra como una única **Reserva** celeste, sin revelar su origen. En cada checkout aparece automáticamente el botón para confirmar que el aseo está listo.
-- **Modo admin**: botoncito `🔒 Admin` en el footer → clave admin → habilita creación de arriendos por **brush selection** (tocá un día para llegada 16:00, otro para salida 12:00). Pill flotante con "Confirmar" o "+ Detalles" para abrir el form con fechas pre-llenas.
+- **Vista móvil** (`/`, en celular): PIN → calendario. Toda estadía se muestra como una única **Reserva**, sin revelar su origen. Las reservas consecutivas alternan azul y violeta y conservan el mismo tono durante toda la estadía. Los extremos dicen explícitamente **Check-in 15:00** y **Check-out 12:00**. En cada check-out aparece automáticamente el botón para confirmar que el aseo está listo.
+- **Modo admin**: botoncito `🔒 Admin` en el footer → clave admin → habilita creación de arriendos por **brush selection** (tocá un día para check-in 15:00, otro para check-out 12:00). Pill flotante con "Confirmar" o "+ Detalles" para abrir el form con fechas pre-llenas.
 - **Calendarios vinculados**: el contrato público aporta Airbnb, Booking y
   reservas particulares. Aquí todos aparecen únicamente como **Reserva**,
   son de solo lectura y nunca muestran proveedor ni datos del huésped.
-- **WhatsApp para Beatriz**: la bandeja operativa selecciona una o varias
-  reservas y prepara mensajes separados o agrupados. Abrir WhatsApp se registra
+- **WhatsApp para Beatriz**: el operador ve solamente los avisos pendientes; el
+  administrador puede seleccionar una o varias reservas y preparar mensajes
+  separados o agrupados. Abrir WhatsApp se registra
   aparte; al volver, la persona confirma si realmente lo envió. El historial se
   comparte por Supabase y permite corregir o reenviar.
 
