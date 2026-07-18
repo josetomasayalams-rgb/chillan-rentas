@@ -1,6 +1,6 @@
 # chillan-rentas
 
-Plataforma de operaciones de arriendos para el departamento familiar de Chillán. Vista mobile-first con Liquid Glass (estilo Apple), calendario de arriendos, tareas generadas automáticamente al check-out, reservas sanitizadas de Airbnb/Booking/familia y modo Admin para registrar arriendos con brush selection.
+Plataforma de operaciones para el departamento de Chillán. Vista mobile-first con un único tipo de reserva celeste, tareas de aseo generadas automáticamente al checkout y reservas sanitizadas de Airbnb, Booking y particulares.
 
 Stack: **vanilla JS, no build, no framework.** Tres archivos (`index.html` + `app.js` + `styles.css`) + assets + schema SQL. Se sirve con cualquier static server.
 
@@ -30,10 +30,10 @@ PIN admin: `2407` (cambiar en `app.js` → `CONFIG.adminPin`).
 
 ## Cómo se usa
 
-- **Vista móvil** (`/`, en celular): PIN → calendario de arriendos. Cada arriendo muestra una barra con la fuente (Airbnb, Booking, Directo, Otro). En el día de check-out aparece un **ticket verde** que se puede tocar para marcar la tarea como hecha, con comentario opcional.
+- **Vista móvil** (`/`, en celular): PIN → calendario. Toda estadía se muestra como una única **Reserva** celeste, sin revelar su origen. En cada checkout aparece automáticamente el botón para confirmar que el aseo está listo.
 - **Modo admin**: botoncito `🔒 Admin` en el footer → clave admin → habilita creación de arriendos por **brush selection** (tocá un día para llegada 16:00, otro para salida 12:00). Pill flotante con "Confirmar" o "+ Detalles" para abrir el form con fechas pre-llenas.
-- **Calendarios vinculados**: el contrato público de Reservas familiares aporta
-  Airbnb, Booking y familia. Aquí todos aparecen únicamente como **Reservado**,
+- **Calendarios vinculados**: el contrato público aporta Airbnb, Booking y
+  reservas particulares. Aquí todos aparecen únicamente como **Reserva**,
   son de solo lectura y nunca muestran proveedor ni datos del huésped.
 - **WhatsApp para Beatriz**: la bandeja operativa selecciona una o varias
   reservas y prepara mensajes separados o agrupados. Abrir WhatsApp se registra
@@ -53,7 +53,7 @@ PIN admin: `2407` (cambiar en `app.js` → `CONFIG.adminPin`).
 ## Modelo de dominio
 
 - **Una** `rental` por período de arriendo. Estados: `scheduled | in_progress | completed | cancelled`.
-- **Una** `cleaning` (tarea) por `rental`, generada automáticamente al `checkout_date` a las 12:00. Estados: `pending | confirmed | done | cancelled`.
+- **Una** `cleaning` por reserva manual (`rental_id`) o sincronizada (`reservation_id`), generada automáticamente al `checkout_date` a las 12:00. Estados: `pending | confirmed | done | cancelled`.
 - `cleaning_comments` opcional — para que el operador deje notas (ej: "dejé las llaves en la cocina").
 - `beatriz_notifications`, `beatriz_notification_batches` y
   `beatriz_notification_events` guardan estado e historial usando solo la

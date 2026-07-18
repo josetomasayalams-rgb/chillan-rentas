@@ -6,10 +6,16 @@ const {
   buildGroupedWhatsAppMessage,
   buildNotificationMessages,
   buildWhatsAppMessage,
+  calendarReservationsWithoutManualDuplicates,
   calendarRangesToRentals,
+  cleaningForRental,
+  cleaningIdForReservation,
+  mergeCalendarReservationHistory,
   normalizeAvailabilityPayload,
   planBatchResolution,
+  planCalendarCleaningReconciliation,
   planNotificationReconciliation,
+  sourceMeta,
 } = app;
 
 const ID_A = `rsv_${"a".repeat(32)}`;
@@ -61,6 +67,127 @@ test("convierte calendarios en reservas opacas, estables y de solo lectura", () 
   assert.equal(first.readOnly, true);
   assert.equal(first.guest_name, null);
   assert.equal(first.reference, null);
+});
+
+test("muestra toda estadía como una única reserva celeste", () => {
+  assert.deepEqual(sourceMeta("direct"), { name: "Reserva", color: "#38BDF8" });
+  assert.deepEqual(sourceMeta("calendar"), sourceMeta("direct"));
+});
+
+test("evita duplicar una reserva sincronizada ya registrada manualmente", () => {
+  const calendar = [{
+    reservationId: ID_A,
+    checkin_date: "2026-07-16",
+    checkout_date: "2026-07-18",
+  }, {
+    reservationId: ID_B,
+    checkin_date: "2026-07-19",
+    checkout_date: "2026-07-23",
+  }];
+  const manual = [{
+    id: "manual-a",
+    checkin_date: "2026-07-16",
+    checkout_date: "2026-07-18",
+    status: "scheduled",
+  }];
+  assert.deepEqual(calendarReservationsWithoutManualDuplicates(calendar, manual), [calendar[1]]);
+
+  const duplicateCleaning = {
+    id: cleaningIdForReservation(ID_A),
+    rental_id: null,
+    reservation_id: ID_A,
+    scheduled_date: "2026-07-18",
+    status: "pending",
+  };
+  const plan = planCalendarCleaningReconciliation(
+    [duplicateCleaning],
+    [calendar[1]],
+    [{ reservation_id: ID_A, status: "pending" }],
+    { suppressedReservationIds: [ID_A] },
+  );
+  assert.equal(plan.upserts.find(item => item.reservation_id === ID_A)?.status, "cancelled");
+});
+
+test("genera una limpieza automática y estable por reserva sincronizada", () => {
+  const rentals = [
+    { reservationId: ID_A, checkin_date: "2026-08-01", checkout_date: "2026-08-03" },
+    { reservationId: ID_B, checkin_date: "2026-08-07", checkout_date: "2026-08-09" },
+  ];
+  const created = planCalendarCleaningReconciliation([], rentals, [], {
+    nowIso: "2026-07-18T12:00:00.000Z",
+  });
+  assert.equal(created.upserts.length, 2);
+  assert.equal(created.upserts[0].id, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+  assert.equal(created.upserts[0].rental_id, null);
+  assert.equal(created.upserts[0].reservation_id, ID_A);
+  assert.equal(created.upserts[0].scheduled_date, "2026-08-03");
+  assert.equal(created.upserts[0].status, "pending");
+  assert.equal(cleaningIdForReservation(ID_A), created.upserts[0].id);
+  assert.equal(cleaningIdForReservation("private"), null);
+
+  const repeated = planCalendarCleaningReconciliation(created.upserts, rentals, [], {
+    nowIso: "2026-07-18T13:00:00.000Z",
+  });
+  assert.equal(repeated.upserts.length, 0);
+});
+
+test("mueve, cancela o conserva la limpieza según el ciclo de la reserva", () => {
+  const previous = {
+    id: cleaningIdForReservation(ID_A),
+    rental_id: null,
+    reservation_id: ID_A,
+    scheduled_date: "2026-08-03",
+    scheduled_time: "12:00",
+    status: "done",
+    confirmed_at: null,
+    done_at: "2026-08-03T15:00:00.000Z",
+  };
+  const changed = planCalendarCleaningReconciliation([previous], [{
+    reservationId: ID_A,
+    checkin_date: "2026-08-02",
+    checkout_date: "2026-08-04",
+  }], [], { nowIso: "2026-07-19T12:00:00.000Z" });
+  assert.equal(changed.upserts[0].scheduled_date, "2026-08-04");
+  assert.equal(changed.upserts[0].status, "pending");
+  assert.equal(changed.upserts[0].done_at, null);
+
+  const removed = planCalendarCleaningReconciliation([previous], [], [{
+    reservation_id: ID_A,
+    status: "removed",
+  }]);
+  assert.equal(removed.upserts[0].status, "cancelled");
+
+  const finished = planCalendarCleaningReconciliation([previous], [], [{
+    reservation_id: ID_A,
+    status: "finished",
+  }]);
+  assert.equal(finished.upserts.length, 0);
+});
+
+test("conserva en pantalla la salida finalizada hasta confirmar el aseo", () => {
+  const cleanings = [{
+    id: cleaningIdForReservation(ID_A),
+    rental_id: null,
+    reservation_id: ID_A,
+    scheduled_date: "2026-08-03",
+    status: "pending",
+  }];
+  const history = mergeCalendarReservationHistory([], [{
+    reservation_id: ID_A,
+    checkin_date: "2026-08-01",
+    checkout_date: "2026-08-03",
+    status: "finished",
+    created_at: "2026-07-18T12:00:00.000Z",
+  }, {
+    reservation_id: ID_B,
+    checkin_date: "2026-08-04",
+    checkout_date: "2026-08-05",
+    status: "removed",
+  }], cleanings);
+  assert.equal(history.length, 1);
+  assert.equal(history[0].reservationId, ID_A);
+  assert.equal(history[0].archived, true);
+  assert.equal(cleaningForRental(history[0], cleanings)?.id, cleanings[0].id);
 });
 
 test("reconcilia altas, cambios, retiros y finalizaciones sin duplicar", () => {

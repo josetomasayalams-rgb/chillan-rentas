@@ -10,6 +10,10 @@ Resultados esperados:
 
 En un navegador, verifica el bloqueo, el desbloqueo, el modo administrador, creación/edición/cancelación de un arriendo y la transición de la limpieza generada. Repite en modo local y, si está autorizado, en modo remoto.
 
+Comprueba además que Airbnb, Booking y particulares usen el mismo color celeste,
+que cada reserva sincronizada tenga un botón de aseo en checkout y que una
+estadía finalizada permanezca visible hasta confirmar la limpieza.
+
 Para la bandeja de Beatriz, sin enviar un mensaje real, verifica:
 
 1. actualización al entrar, al volver al foco y mediante “Actualizar”;

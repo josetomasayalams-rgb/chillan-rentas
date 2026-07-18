@@ -46,7 +46,7 @@ begin
 end $$;
 
 -- ---------- Memoria de avisos a Beatriz ----------------------------------
-+-- Memoria compartida de coordinación de limpiezas con Beatriz.
+-- Memoria compartida de coordinación de limpiezas con Beatriz.
 -- Aditiva e idempotente: no modifica reservas ni calendarios externos.
 
 create table if not exists public.beatriz_notification_batches (
@@ -181,21 +181,56 @@ alter table rentals
 -- quedan dos filas activas.
 create table if not exists cleanings (
   id              uuid primary key default gen_random_uuid(),
-  rental_id       uuid not null references rentals(id) on delete cascade,  -- borrar rental borra la cleaning
+  rental_id       uuid references rentals(id) on delete cascade,
+  reservation_id  text,
   scheduled_date  date not null,                       -- = rentals.checkout_date al crear
   scheduled_time  time not null default '12:00',       -- check-out a las 12:00
   status          text not null default 'pending',
   confirmed_at    timestamptz,
   done_at         timestamptz,
   created_at      timestamptz default now(),
-  constraint cleanings_status_chk check (status in ('pending','confirmed','done','cancelled'))
+  constraint cleanings_status_chk check (status in ('pending','confirmed','done','cancelled')),
+  constraint cleanings_target_chk check (num_nonnulls(rental_id, reservation_id) = 1),
+  constraint cleanings_reservation_id_chk
+    check (reservation_id is null or reservation_id ~ '^rsv_[a-f0-9]{32}$')
 );
+
+-- Migración idempotente para instalaciones existentes: una limpieza puede
+-- pertenecer a una reserva manual o a una reserva sincronizada, nunca a ambas.
+alter table cleanings add column if not exists reservation_id text;
+alter table cleanings alter column rental_id drop not null;
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.table_constraints
+    where constraint_schema = 'public' and table_name = 'cleanings'
+      and constraint_name = 'cleanings_target_chk'
+  ) then
+    alter table cleanings drop constraint cleanings_target_chk;
+  end if;
+  if exists (
+    select 1 from information_schema.table_constraints
+    where constraint_schema = 'public' and table_name = 'cleanings'
+      and constraint_name = 'cleanings_reservation_id_chk'
+  ) then
+    alter table cleanings drop constraint cleanings_reservation_id_chk;
+  end if;
+end $$;
+
+alter table cleanings
+  add constraint cleanings_target_chk
+    check (num_nonnulls(rental_id, reservation_id) = 1),
+  add constraint cleanings_reservation_id_chk
+    check (reservation_id is null or reservation_id ~ '^rsv_[a-f0-9]{32}$');
 
 -- Query dominante: "cleanings activos (pending/confirmed) ordenados por fecha".
 -- El índice compuesto sirve filtro + orden sin sort. El individual se conserva
 -- para queries de admin tipo "historial por mes".
 create index if not exists cleanings_status_date_idx  on cleanings (status, scheduled_date);
 create index if not exists cleanings_rental_idx       on cleanings (rental_id);
+create unique index if not exists cleanings_reservation_id_uidx
+  on cleanings (reservation_id) where reservation_id is not null;
 
 -- Trigger: setea confirmed_at / done_at automáticamente al transicionar de
 -- estado, y los limpia si se retrocede a 'pending'. Defensa en profundidad:
