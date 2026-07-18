@@ -22,6 +22,7 @@ Las políticas actuales permiten el uso compartido previsto desde el cliente pú
 | Escritura no autorizada en el backend | no existe identidad de usuario; las políticas son abiertas | Riesgo aceptado, pendiente de diseño |
 | Datos inconsistentes | restricciones SQL, claves foráneas y transiciones de estado | Parcial; falta unicidad de limpieza por arriendo |
 | Fallo del backend | degradación a almacenamiento local y aviso visible | En uso |
+| Fuga de proveedor o huésped desde calendarios | `/availability` entrega solo fechas y la UI muestra “Reservado” | En uso |
 | Texto no confiable | escape antes de insertarlo en la interfaz | En uso |
 
 ## Dependencias y despliegue
@@ -29,5 +30,9 @@ Las políticas actuales permiten el uso compartido previsto desde el cliente pú
 El único código de terceros cargado por la aplicación es el cliente Supabase remoto aprobado. Los workflows nuevos fijan las Actions a SHA; al actualizar una Action hay que verificar la versión y conservar el pin.
 
 El despliegue público debe acompañarse con un control de acceso externo si la privacidad requerida supera el modelo familiar actual.
+
+Los mensajes preparados para Beatriz contienen únicamente llegada, salida y
+la solicitud de limpieza. La plataforma no recibe el origen de la reserva,
+familia, huésped, UID ni notas privadas.
 
 Comunica incidentes a los administradores de la propiedad sin compartir datos de huéspedes por canales públicos.

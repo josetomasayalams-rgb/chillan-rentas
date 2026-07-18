@@ -13,6 +13,11 @@ const CONFIG = {
   supabaseUrl:    "https://uimqusoylxpyljbfqumm.supabase.co",
   supabaseAnonKey:"sb_publishable_B_MIa8pWGFjzLhdzLoi61A_kffCRo8_",
 
+  // Contrato público y sanitizado de Reservas familiares. Une Airbnb,
+  // Booking y familia sin exponer fuente, huésped, UID ni notas.
+  familyAvailabilityUrl: "https://uimqusoylxpyljbfqumm.supabase.co/functions/v1/calendar-ical/availability",
+  calendarRefreshMs: 5 * 60 * 1000,
+
   // WhatsApp de Beatriz (formato internacional sin '+', ej: '56957333361').
   // Si está vacío, el botón de WhatsApp muestra un toast y no abre nada.
   beatrizWhatsApp: "56957333361",
@@ -28,13 +33,15 @@ const CONFIG = {
 
   sourceLabels: {
     arriendo: "Arriendo",
+    calendar: "Reservado",
   },
   sourceColors: {
     arriendo: "#6366F1",   // indigo, único color
+    calendar: "#0EA5E9",   // azul: reserva sincronizada y de solo lectura
   },
   // Orden estable para "lanes" en celdas con varios arriendos.
   // Incluye todos los valores posibles del CHECK del schema (más "arriendo" futuro).
-  sourceOrder:   ["direct","airbnb","booking","other","arriendo"],
+  sourceOrder:   ["calendar","direct","airbnb","booking","other","arriendo"],
 
   weekStart: 1,        // 1 = lunes
   yearMin:   2020,
@@ -43,7 +50,7 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "26";
+const VERSION = "27";
 const MONTHS  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -51,6 +58,7 @@ const LS = {
   rentals:     "ops-rentals",
   cleanings:   "ops-cleanings",
   comments:    "ops-comments",
+  calendar:    "ops-calendar-availability",
   lockEnabled: "ops-lock-enabled",     // "1" = lock al iniciar; "0" = sin clave
 };
 
@@ -60,6 +68,9 @@ const state = {
   rentals:   [],
   cleanings: [],
   comments:  [],
+  calendarReservations: [],
+  calendarSource: null,
+  calendarStatus: { status: "loading", fromCache: false, error: null, lastSuccessfulSyncAt: null },
   store: null,
   admin: false,         // modo admin: permite crear/editar/cancelar
   brush: { start: null, end: null },   // selección de arriendo por click en celdas
@@ -89,11 +100,13 @@ function todayIso(){
   const d = new Date();
   return isoOf(d.getFullYear(), d.getMonth(), d.getDate());
 }
-function sourceMeta(_s){
-  // Solo hay una categoría visible: "Arriendo". El valor interno en la DB
-  // puede ser cualquier source válido del CHECK del schema (usamos "direct");
-  // el usuario siempre ve "Arriendo" en el display.
-  return { name: "Arriendo", color: "#6366F1" };
+function sourceMeta(s){
+  if (s === "calendar"){
+    return { name: CONFIG.sourceLabels.calendar, color: CONFIG.sourceColors.calendar };
+  }
+  // Los valores internos históricos siguen mostrándose bajo una sola
+  // categoría. Nunca se muestra Airbnb, Booking ni una familia.
+  return { name: CONFIG.sourceLabels.arriendo, color: CONFIG.sourceColors.arriendo };
 }
 function sourceOrderIdx(s){
   const i = CONFIG.sourceOrder.indexOf(s);
@@ -110,6 +123,116 @@ function addDays(iso, n){
   const { y, m, d } = parseISO(iso);
   const dt = new Date(y, m, d + n);
   return isoOf(dt.getFullYear(), dt.getMonth(), dt.getDate());
+}
+
+function isValidIsoDate(value){
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) return false;
+  const { y, m, d } = parseISO(value);
+  const date = new Date(y, m, d);
+  return date.getFullYear() === y && date.getMonth() === m && date.getDate() === d;
+}
+
+function normalizeAvailabilityPayload(payload){
+  if (!payload || payload.version !== 1) throw new Error("Contrato de calendario no compatible");
+  const input = Array.isArray(payload.reservedRanges)
+    ? payload.reservedRanges
+    : Array.isArray(payload.blockedRanges) ? payload.blockedRanges : null;
+  if (!input) throw new Error("El calendario no entregó reservas");
+
+  const seen = new Set();
+  const ranges = input.flatMap(range => {
+    const startDate = range?.startDate;
+    const endDate = range?.endDate;
+    if (!isValidIsoDate(startDate) || !isValidIsoDate(endDate) || endDate <= startDate) return [];
+    const key = `${startDate}|${endDate}`;
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{ startDate, endDate }];
+  }).sort((a,b) => a.startDate.localeCompare(b.startDate) || a.endDate.localeCompare(b.endDate));
+
+  return {
+    version: 1,
+    status: ["live","stale","unavailable"].includes(payload.status) ? payload.status : "unavailable",
+    generatedAt: payload.generatedAt || null,
+    lastSuccessfulSyncAt: payload.lastSuccessfulSyncAt || null,
+    ranges,
+  };
+}
+
+function makeCalendarSource(url){
+  let lastAttemptAt = 0;
+  const readCache = () => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(LS.calendar) || "null");
+      return parsed?.ranges
+        ? normalizeAvailabilityPayload({ ...parsed, reservedRanges: parsed.ranges })
+        : normalizeAvailabilityPayload(parsed);
+    }
+    catch { return null; }
+  };
+  const writeCache = value => {
+    try { localStorage.setItem(LS.calendar, JSON.stringify(value)); } catch {}
+  };
+
+  return {
+    async load({ force=false } = {}){
+      const cached = readCache();
+      const now = Date.now();
+      if (!force && cached && now - lastAttemptAt < CONFIG.calendarRefreshMs){
+        return { ...cached, fromCache: false, error: null };
+      }
+      lastAttemptAt = now;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      try{
+        const response = await fetch(url, {
+          signal: controller.signal,
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        });
+        if (!response.ok) throw new Error(`Calendario respondió ${response.status}`);
+        const normalized = normalizeAvailabilityPayload(await response.json());
+        writeCache(normalized);
+        return { ...normalized, fromCache: false, error: null };
+      }catch(error){
+        if (cached){
+          return {
+            ...cached,
+            status: "stale",
+            fromCache: true,
+            error: error?.name === "AbortError" ? "Tiempo de espera agotado" : String(error?.message || error),
+          };
+        }
+        throw error;
+      }finally{
+        clearTimeout(timeout);
+      }
+    },
+  };
+}
+
+function calendarRangesToRentals(calendar){
+  return calendar.ranges.map((range, index) => ({
+    id: `calendar:${range.startDate}:${range.endDate}:${index}`,
+    source: "calendar",
+    reference: null,
+    guest_name: null,
+    checkin_date: range.startDate,
+    checkout_date: range.endDate,
+    notes: null,
+    status: "scheduled",
+    created_at: calendar.generatedAt,
+    readOnly: true,
+  }));
+}
+
+function rentalsForDisplay(){
+  const manual = state.rentals.filter(r => r.status !== "cancelled");
+  const manualRanges = new Set(manual.map(r => `${r.checkin_date}|${r.checkout_date}`));
+  const imported = state.calendarReservations.filter(r =>
+    !manualRanges.has(`${r.checkin_date}|${r.checkout_date}`)
+  );
+  return [...state.rentals, ...imported];
 }
 
 // Horarios fijos por convención. La app no los guarda en la DB; se muestran
@@ -358,9 +481,51 @@ async function load(isRemotePush=false){
     }
     state.loadError = cat.message;
   }
+  await loadCalendarReservations(!isRemotePush);
   render();
   updateUndoBtn();
   updateWaLastBtn();   // habilita/deshabilita el botón "📱 Último" según haya rentals
+}
+
+async function loadCalendarReservations(force=false){
+  if (!state.calendarSource) return;
+  try{
+    const calendar = await state.calendarSource.load({ force });
+    state.calendarReservations = calendarRangesToRentals(calendar);
+    state.calendarStatus = {
+      status: calendar.status,
+      fromCache: calendar.fromCache,
+      error: calendar.error,
+      lastSuccessfulSyncAt: calendar.lastSuccessfulSyncAt,
+    };
+  }catch(error){
+    state.calendarStatus = {
+      status: "unavailable",
+      fromCache: false,
+      error: error?.name === "AbortError" ? "Tiempo de espera agotado" : String(error?.message || error),
+      lastSuccessfulSyncAt: null,
+    };
+  }
+}
+
+function updateCalendarBadge(){
+  const badge = document.getElementById("calendar-badge");
+  if (!badge) return;
+  const { status, fromCache } = state.calendarStatus;
+  badge.classList.toggle("live", status === "live" && !fromCache);
+  badge.classList.toggle("warn", status !== "live" || fromCache);
+  if (status === "live" && !fromCache){
+    badge.textContent = "● Airbnb · Booking · Familia al día";
+    badge.title = "Reservas sincronizadas y sanitizadas";
+  } else if (status === "stale" || fromCache){
+    badge.textContent = "⚠ Calendarios con última copia válida";
+    badge.title = state.calendarStatus.error || "La sincronización está atrasada";
+  } else if (status === "loading"){
+    badge.textContent = "○ Cargando calendarios…";
+  } else {
+    badge.textContent = "⚠ Calendarios no disponibles";
+    badge.title = state.calendarStatus.error || "No se pudo consultar la disponibilidad";
+  }
 }
 
 // Refresca el badge de modo cuando el store cambia de identidad.
@@ -420,11 +585,11 @@ async function retryConnection(){
 
 // ---------- Overlap check ----------
 function findOverlapping(checkinIso, checkoutIso, ignoreRentalId=null){
-  return state.rentals.filter(r =>
+  return rentalsForDisplay().filter(r =>
     r.id !== ignoreRentalId
     && r.status !== "cancelled"
-    && r.checkin_date <= checkoutIso
-    && r.checkout_date >= checkinIso
+    && r.checkin_date < checkoutIso
+    && r.checkout_date > checkinIso
   );
 }
 
@@ -435,6 +600,7 @@ function render(){
   renderHint();
   renderGrid();
   renderBrushBar();
+  updateCalendarBadge();
 }
 
 function brushClass(dateStr){
@@ -558,6 +724,15 @@ function renderBrushBar(){
 async function confirmBrush(withWhatsApp=false){
   const b = state.brush;
   if (!b.start || !b.end) return;
+  if (b.end <= b.start){
+    toast("La salida debe ser posterior a la llegada", "warn");
+    return;
+  }
+  const overlaps = findOverlapping(b.start, b.end);
+  if (overlaps.length){
+    toast("Ese período ya aparece como reservado", "warn");
+    return;
+  }
   const rental = {
     id: uuid(),
     source: "direct",
@@ -661,6 +836,7 @@ function renderNav(){
 
 function renderLegend(){
   const el = document.getElementById("legend");
+  el.hidden = false;
   el.innerHTML = Object.keys(CONFIG.sourceLabels).map(s => {
     const m = sourceMeta(s);
     return `<span class="chip"><span class="dot" style="background:${m.color}"></span>${escapeHtml(m.name)}</span>`;
@@ -678,7 +854,7 @@ function renderHint(){
       el.textContent = "Listo · confirma el arriendo o agrega detalles";
     }
   } else {
-    el.textContent = "Toca un arriendo para ver detalles · toca el ticket de salida para marcar la tarea";
+    el.textContent = "Toca una reserva para ver fechas · el ticket de salida corresponde a una limpieza operativa";
   }
 }
 
@@ -729,7 +905,7 @@ function renderGrid(){
     num.textContent = dayNum;
     cell.appendChild(num);
 
-    const dayRentals = state.rentals
+    const dayRentals = rentalsForDisplay()
       .filter(r => r.status !== "cancelled"
                 && r.checkin_date <= dateStr
                 && r.checkout_date >= dateStr)
@@ -751,12 +927,13 @@ function renderGrid(){
       const seg = document.createElement("div");
       seg.className = cls;
       seg.style.background = meta.color;
-      // Solo el horario en los bordes (sin nombre de fuente, por convención del usuario).
-      // Single-day rental: muestra la hora de llegada.
-      const label = isStart ? CHECKIN_TIME : isEnd ? CHECKOUT_TIME : "";
+      // Las entradas sincronizadas nunca revelan su fuente: solo “Reservado”.
+      const label = r.readOnly
+        ? (isStart ? `Reservado · ${CHECKIN_TIME}` : isEnd ? CHECKOUT_TIME : "Reservado")
+        : (isStart ? CHECKIN_TIME : isEnd ? CHECKOUT_TIME : "");
       seg.textContent = label;
       seg.dataset.id = r.id;
-      seg.title = `${meta.name} · ${r.checkin_date} ${CHECKIN_TIME} → ${r.checkout_date} ${CHECKOUT_TIME}${r.guest_name ? " · " + r.guest_name : ""}`;
+      seg.title = `${meta.name} · ${r.checkin_date} ${CHECKIN_TIME} → ${r.checkout_date} ${CHECKOUT_TIME}${!r.readOnly && r.guest_name ? " · " + r.guest_name : ""}`;
       seg.addEventListener("click", e => { e.stopPropagation(); openPopover(r, seg); });
       segs.appendChild(seg);
     });
@@ -806,28 +983,30 @@ function openPopover(r, anchor){
   const c0 = cs[0];
   const cleaningLine = c0
     ? `<div class="prow"><span>Tarea</span><b>${escapeHtml(prettyShort(c0.scheduled_date))} · ${escapeHtml(c0.status)}</b></div>`
-    : "";
+    : r.readOnly
+      ? `<div class="prow"><span>Limpieza</span><b>Coordinar para la salida</b></div>`
+      : "";
 
   // Acciones solo visibles en admin. El botón de WhatsApp es el más visible
   // (verde) y va primero porque es la acción más común al crear.
   const adminActions = state.admin ? `
     <div class="pactions">
-      <button class="pbtn wa-btn" data-act="whatsapp">📱 Enviar a Beatriz</button>
-      <button class="pbtn" data-act="edit">Editar</button>
-      <button class="pbtn danger" data-act="cancel">Cancelar arriendo</button>
+      <button class="pbtn wa-btn" data-act="whatsapp">📱 Preparar mensaje a Beatriz</button>
+      ${r.readOnly ? "" : `<button class="pbtn" data-act="edit">Editar</button>
+      <button class="pbtn danger" data-act="cancel">Cancelar arriendo</button>`}
     </div>
   ` : "";
 
   pop.innerHTML = `
     <div class="ptitle">
       <span class="dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${meta.color};margin-right:6px"></span>
-      ${escapeHtml(meta.name)}${r.reference ? ` · ${escapeHtml(r.reference)}` : ""}
+      ${escapeHtml(meta.name)}${!r.readOnly && r.reference ? ` · ${escapeHtml(r.reference)}` : ""}
     </div>
     <div class="prow"><span>Llegada</span><b>${escapeHtml(prettyShort(r.checkin_date))} 16:00</b></div>
     <div class="prow"><span>Salida</span><b>${escapeHtml(prettyShort(r.checkout_date))} 12:00</b></div>
-    ${r.guest_name ? `<div class="prow"><span>Huesped</span><b>${escapeHtml(r.guest_name)}</b></div>` : ""}
+    ${!r.readOnly && r.guest_name ? `<div class="prow"><span>Huesped</span><b>${escapeHtml(r.guest_name)}</b></div>` : ""}
     ${cleaningLine}
-    ${r.notes ? `<div class="prow"><span>Nota</span><b>${escapeHtml(r.notes)}</b></div>` : ""}
+    ${!r.readOnly && r.notes ? `<div class="prow"><span>Nota</span><b>${escapeHtml(r.notes)}</b></div>` : ""}
     ${adminActions}
   `;
   pop.hidden = false;
@@ -838,9 +1017,11 @@ function openPopover(r, anchor){
       btn.addEventListener("click", () => {
         const act = btn.dataset.act;
         if (act === "edit"){
+          if (r.readOnly) return;
           pop.hidden = true;
           openRentalForm(r);
         } else if (act === "cancel"){
+          if (r.readOnly) return;
           pop.hidden = true;
           confirmCancelRental(r);
         } else if (act === "whatsapp"){
@@ -857,10 +1038,13 @@ function openPopover(r, anchor){
 // Si el número no está configurado, muestra un toast y no abre nada.
 function buildWhatsAppMessage(r){
   return [
-    "Hola Beatriz, espero que te encuentres bien, te aviso de un nuevo arriendo.",
+    "Hola Beatriz, espero que estés bien. Te aviso de una reserva confirmada en el departamento de Chillán.",
     "",
     `• Llegada: ${prettyShort(r.checkin_date)} · 16:00`,
     `• Salida: ${prettyShort(r.checkout_date)} · 12:00`,
+    `• Limpieza: ${prettyShort(r.checkout_date)} desde las 12:00`,
+    "",
+    "¿Puedes confirmarme si tienes disponibilidad para realizar la limpieza de salida? Gracias.",
   ].join("\n");
 }
 
@@ -924,25 +1108,32 @@ function positionPopover(pop, anchor){
   pop.style.top  = Math.max(8, top) + "px";
 }
 
-// Devuelve el rental creado más recientemente (por created_at). Null si no hay.
-function lastRental(){
-  if (!state.rentals.length) return null;
-  return [...state.rentals].sort((a,b) =>
-    (b.created_at || "").localeCompare(a.created_at || "")
-  )[0];
+// Próxima estadía que necesita coordinación. Incluye las reservas sanitizadas
+// de Airbnb, Booking y familia, sin revelar cuál fue su origen.
+function nextReservationForWhatsApp(){
+  const today = todayIso();
+  const activeOrFuture = rentalsForDisplay()
+    .filter(r => r.status !== "cancelled" && r.checkout_date >= today)
+    .sort((a,b) =>
+      a.checkin_date.localeCompare(b.checkin_date) || a.checkout_date.localeCompare(b.checkout_date)
+    );
+  if (activeOrFuture.length) return activeOrFuture[0];
+  return [...state.rentals]
+    .filter(r => r.status !== "cancelled")
+    .sort((a,b) => (b.created_at || "").localeCompare(a.created_at || ""))[0] || null;
 }
 
 // Actualiza el estado del botón "📱 Último" (admin-only).
 function updateWaLastBtn(){
   const btn = document.getElementById("wa-last");
   if (!btn) return;
-  const last = lastRental();
-  if (last){
+  const next = nextReservationForWhatsApp();
+  if (next){
     btn.disabled = false;
-    btn.title = `Enviar a Beatriz: ${prettyShort(last.checkin_date)} → ${prettyShort(last.checkout_date)} (16:00 → 12:00)`;
+    btn.title = `Preparar mensaje para Beatriz: ${prettyShort(next.checkin_date)} → ${prettyShort(next.checkout_date)} (16:00 → 12:00)`;
   } else {
     btn.disabled = true;
-    btn.title = "No hay arriendos todavía. Creá uno con + Arriendo.";
+    btn.title = "No hay reservas para coordinar todavía.";
   }
 }
 
@@ -951,12 +1142,12 @@ function updateWaLastBtn(){
 function openRentalsList(){
   const modal = document.getElementById("list-modal");
   const list  = document.getElementById("rentals-list");
-  // Orden: más recientes primero
-  const rentals = [...state.rentals].sort((a,b) =>
-    (b.created_at || "").localeCompare(a.created_at || "")
+  // Orden: próximas primero; las sincronizadas son de solo lectura.
+  const rentals = rentalsForDisplay().sort((a,b) =>
+    a.checkin_date.localeCompare(b.checkin_date) || a.checkout_date.localeCompare(b.checkout_date)
   );
   if (!rentals.length){
-    list.innerHTML = `<p class="empty-row">No hay arriendos. Creá uno con <strong>+ Arriendo</strong> en la nav.</p>`;
+    list.innerHTML = `<p class="empty-row">No hay reservas. Crea un arriendo o revisa la conexión de calendarios.</p>`;
   } else {
     list.innerHTML = rentals.map(r => {
       const meta = sourceMeta(r.source);
@@ -974,12 +1165,13 @@ function openRentalsList(){
             <span class="rl-dates"><strong>${escapeHtml(prettyShort(r.checkin_date))}</strong> 16:00 → <strong>${escapeHtml(prettyShort(r.checkout_date))}</strong> 12:00</span>
             ${r.guest_name ? `<span class="rl-meta">· ${escapeHtml(r.guest_name)}</span>` : ""}
             ${r.reference ? `<span class="rl-meta">· ${escapeHtml(r.reference)}</span>` : ""}
+            ${r.readOnly ? `<span class="rl-badge synced">Reservado · sincronizado</span>` : ""}
             ${statusBadge}
           </div>
           <div class="rl-actions">
-            <button class="pbtn" data-act="edit" data-id="${r.id}" title="Editar">✏️ Editar</button>
-            <button class="pbtn wa-btn" data-act="whatsapp" data-id="${r.id}" title="Enviar a Beatriz por WhatsApp">📱 Avisar</button>
-            ${r.status !== "cancelled" ? `<button class="pbtn danger" data-act="cancel" data-id="${r.id}" title="Cancelar arriendo">Cancelar</button>` : ""}
+            ${r.readOnly ? "" : `<button class="pbtn" data-act="edit" data-id="${r.id}" title="Editar">✏️ Editar</button>`}
+            <button class="pbtn wa-btn" data-act="whatsapp" data-id="${r.id}" title="Preparar mensaje para Beatriz">📱 Avisar</button>
+            ${!r.readOnly && r.status !== "cancelled" ? `<button class="pbtn danger" data-act="cancel" data-id="${r.id}" title="Cancelar arriendo">Cancelar</button>` : ""}
           </div>
         </div>
       `;
@@ -988,15 +1180,17 @@ function openRentalsList(){
   // Wire up actions
   list.querySelectorAll(".rl-actions button").forEach(btn => {
     btn.addEventListener("click", () => {
-      const r = state.rentals.find(x => x.id === btn.dataset.id);
+      const r = rentalsForDisplay().find(x => x.id === btn.dataset.id);
       if (!r) return;
       const act = btn.dataset.act;
       if (act === "edit"){
+        if (r.readOnly) return;
         modal.hidden = true;
         openRentalForm(r);
       } else if (act === "whatsapp"){
         openWhatsApp(r);
       } else if (act === "cancel"){
+        if (r.readOnly) return;
         modal.hidden = true;
         confirmCancelRental(r);
       }
@@ -1058,7 +1252,12 @@ async function saveRentalForm(){
   const ci = document.getElementById("r-checkin").value;
   const co = document.getElementById("r-checkout").value;
   if (!ci || !co){ document.getElementById("r-hint").textContent = "⚠ Faltan fechas."; return; }
-  if (co < ci){ document.getElementById("r-hint").textContent = "⚠ Check-out no puede ser antes de check-in."; return; }
+  if (co <= ci){ document.getElementById("r-hint").textContent = "⚠ Check-out debe ser posterior al check-in."; return; }
+  const overlaps = findOverlapping(ci, co, m.rental?.id || null);
+  if (overlaps.length){
+    document.getElementById("r-hint").textContent = "⚠ Ese período ya aparece como reservado en el calendario.";
+    return;
+  }
 
   const data = {
     source:       "direct",   // valor interno; el display siempre dice "Arriendo"
@@ -1622,10 +1821,10 @@ function bind(){
     confirmBrush(true);
   });
 
-  // WhatsApp del último arriendo creado (admin only)
+  // WhatsApp de la próxima reserva que requiere coordinación (admin only)
   document.getElementById("wa-last").addEventListener("click", () => {
     if (!state.admin) return;
-    const r = lastRental();
+    const r = nextReservationForWhatsApp();
     if (r) openWhatsApp(r);
   });
 
@@ -1701,11 +1900,12 @@ function move(delta){
 }
 
 // ---------- Init ----------
-(async function main(){
+async function main(){
   try{
     const t = today();
     state.view = { y: t.y, m: t.m };
     state.lockEnabled = isLockEnabled();
+    state.calendarSource = makeCalendarSource(CONFIG.familyAvailabilityUrl);
     bind();
     await initStore();
     await load();
@@ -1719,4 +1919,16 @@ function move(delta){
     state.loadError = (err && err.message) ? err.message : String(err);
     render();
   }
-})();
+}
+
+if (typeof document !== "undefined") main();
+
+// Superficie mínima para las pruebas Node; no existe en el navegador.
+if (typeof module !== "undefined" && module.exports){
+  module.exports = {
+    buildWhatsAppMessage,
+    calendarRangesToRentals,
+    isValidIsoDate,
+    normalizeAvailabilityPayload,
+  };
+}

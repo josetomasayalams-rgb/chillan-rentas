@@ -1,6 +1,6 @@
 # chillan-rentas
 
-Plataforma de operaciones de arriendos para el departamento familiar de Chillán. Vista mobile-first con Liquid Glass (estilo Apple), calendario de arriendos, tareas generadas automáticamente al check-out, y un botoncito Admin para que el dueño registre arriendos con brush selection.
+Plataforma de operaciones de arriendos para el departamento familiar de Chillán. Vista mobile-first con Liquid Glass (estilo Apple), calendario de arriendos, tareas generadas automáticamente al check-out, reservas sanitizadas de Airbnb/Booking/familia y modo Admin para registrar arriendos con brush selection.
 
 Stack: **vanilla JS, no build, no framework.** Tres archivos (`index.html` + `app.js` + `styles.css`) + assets + schema SQL. Se sirve con cualquier static server.
 
@@ -32,6 +32,11 @@ PIN admin: `2407` (cambiar en `app.js` → `CONFIG.adminPin`).
 
 - **Vista móvil** (`/`, en celular): PIN → calendario de arriendos. Cada arriendo muestra una barra con la fuente (Airbnb, Booking, Directo, Otro). En el día de check-out aparece un **ticket verde** que se puede tocar para marcar la tarea como hecha, con comentario opcional.
 - **Modo admin**: botoncito `🔒 Admin` en el footer → clave admin → habilita creación de arriendos por **brush selection** (tocá un día para llegada 16:00, otro para salida 12:00). Pill flotante con "Confirmar" o "+ Detalles" para abrir el form con fechas pre-llenas.
+- **Calendarios vinculados**: el contrato público de Reservas familiares aporta
+  Airbnb, Booking y familia. Aquí todos aparecen únicamente como **Reservado**,
+  son de solo lectura y nunca muestran proveedor ni datos del huésped.
+- **WhatsApp para Beatriz**: cada reserva prepara un texto con llegada, salida y
+  limpieza de checkout. La persona administradora revisa y confirma el envío en WhatsApp.
 
 ## Archivos
 

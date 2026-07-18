@@ -12,10 +12,15 @@ La familia puede consultar arriendos, coordinar la limpieza de salida y dejar co
 ## Reglas observables
 
 - Cada arriendo muestra llegada y salida en el calendario.
+- Airbnb, Booking y Reservas familiares aparecen únicamente como “Reservado”,
+  sin fuente, huésped, familia, UID ni notas, y son de solo lectura.
 - Al crear o editar un arriendo, la limpieza corresponde al checkout.
+- Cada reserva permite preparar un mensaje para Beatriz con llegada, salida y
+  solicitud de disponibilidad para la limpieza; WhatsApp requiere confirmación humana.
 - El modo local conserva la operación en el dispositivo y avisa que no está sincronizado.
 - El modo remoto comparte cambios mediante Supabase realtime.
 - La interfaz requiere confirmación antes de acciones sensibles.
+- Una reserva sincronizada impide crear manualmente otro arriendo solapado.
 
 ## Fuera de alcance actual
 

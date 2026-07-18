@@ -319,6 +319,8 @@ body.admin-mode .admin-only{ display:inline-flex; }
   border:1px solid var(--glass-brd-soft); background:rgba(255,255,255,.06);
 }
 .mode-badge.live{ color:#7CFFB2; border-color:rgba(124,255,178,.35); }
+.mode-badge.warn{ color:#FDE68A; border-color:rgba(245,158,11,.45); }
+.calendar-badge{ max-width:min(100%, 360px); }
 
 /* Botón admin — pequeño y discreto (mismo patrón que el calendario familiar) */
 .admin-btn{
@@ -615,6 +617,7 @@ body.admin-mode .app{ box-shadow:0 0 0 2px #f59e0b, var(--shadow); }
 .rl-badge.confirmed{ color:#7CFFB2; border-color:rgba(124,255,178,.4); }
 .rl-badge.done{ color:var(--text-faint); border-color:var(--glass-brd-soft); }
 .rl-badge.cancelled{ color:var(--text-faint); border-color:var(--glass-brd-soft); }
+.rl-badge.synced{ color:#BAE6FD; border-color:rgba(14,165,233,.5); }
 .rl-actions{ display:flex; gap:6px; flex:0 0 auto; flex-wrap:wrap; }
 .rl-actions .pbtn{ font-size:11px; padding:5px 9px; }
 .empty-row{ text-align:center; color:var(--text-faint); font-size:14px; padding:24px 8px; }

@@ -24,6 +24,11 @@ Solo `initStore()` y los adaptadores de almacenamiento pueden usar el cliente re
 
 Las preferencias del dispositivo, como activar o desactivar el bloqueo, pueden usar `localStorage` mediante helpers pequeños y dedicados. Arriendos, limpiezas y comentarios nunca usan esa excepción.
 
+Las reservas sanitizadas son un read model externo, no datos de dominio de
+Operaciones. Pasan por `state.calendarSource`, se conservan como última copia
+válida y nunca se insertan en `rentals` ni generan escrituras sobre el
+calendario familiar.
+
 ## Paridad del contrato
 
 Si agregas una operación al puerto:
