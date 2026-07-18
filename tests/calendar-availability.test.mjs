@@ -11,8 +11,10 @@ const {
   calendarRangesToRentals,
   cleaningForRental,
   cleaningIdForReservation,
+  coordinationRecipient,
   isNotificationVisibleForRole,
   mergeCalendarReservationHistory,
+  monthSegmentsForWindow,
   normalizeAvailabilityPayload,
   planBatchResolution,
   planCalendarCleaningReconciliation,
@@ -99,14 +101,18 @@ test("usa explícitamente check-in 15:00 y check-out 12:00", () => {
   assert.equal(CHECKOUT_TIME, "12:00");
 });
 
-test("construye una planificación móvil de 31 días aunque cambie el mes", () => {
+test("construye una planificación móvil de 30 días y hace explícito el cambio de mes", () => {
   const range = rollingMonthWindow("2026-07-18");
   assert.equal(range.start, "2026-07-18");
-  assert.equal(range.endInclusive, "2026-08-17");
-  assert.equal(range.endExclusive, "2026-08-18");
-  assert.equal(range.dates.length, 31);
+  assert.equal(range.endInclusive, "2026-08-16");
+  assert.equal(range.endExclusive, "2026-08-17");
+  assert.equal(range.dates.length, 30);
   assert.equal(range.dates[14], "2026-08-01");
-  assert.equal(new Set(range.dates).size, 31);
+  assert.equal(new Set(range.dates).size, 30);
+  assert.deepEqual(monthSegmentsForWindow(range).map(({ name, days }) => ({ name, days })), [
+    { name: "Julio", days: 14 },
+    { name: "Agosto", days: 16 },
+  ]);
 });
 
 test("el seguimiento diario avanza la ventana y la navegación manual la conserva", () => {
@@ -287,6 +293,15 @@ test("resuelve apertura y confirmación sin confundir cambios posteriores", () =
   assert.equal(pending.batch.status, "not_confirmed");
 });
 
+test("mantiene independientes las confirmaciones de Beatriz y Rodrigo", () => {
+  const batch = { id: "batch-beatriz", status: "opened" };
+  const beatriz = [{ reservation_id: ID_A, last_batch_id: batch.id, status: "opened" }];
+  const rodrigo = [{ reservation_id: ID_A, last_batch_id: null, status: "pending" }];
+  const resolved = planBatchResolution(beatriz, batch, true, "2026-07-18T12:00:00.000Z");
+  assert.equal(resolved.updates[0].status, "confirmed");
+  assert.equal(rodrigo[0].status, "pending");
+});
+
 test("genera mensajes individuales y agrupados sin filtrar datos privados", () => {
   const rentals = [
     { reservationId: ID_A, checkin_date: "2026-08-01", checkout_date: "2026-08-03", guest_name: "Privado" },
@@ -301,4 +316,14 @@ test("genera mensajes individuales y agrupados sin filtrar datos privados", () =
   assert.equal(buildNotificationMessages(rentals, "individual").length, 2);
   assert.equal(buildNotificationMessages(rentals, "grouped").length, 1);
   assert.doesNotMatch(`${individual}\n${grouped}`, /Airbnb|Booking|familia|Privado/i);
+
+  const rodrigoIndividual = buildWhatsAppMessage(rentals[0], "rodrigo");
+  const rodrigoGrouped = buildGroupedWhatsAppMessage(rentals, "rodrigo");
+  assert.match(rodrigoIndividual, /Hola Rodrigo/);
+  assert.match(rodrigoIndividual, /control de acceso/);
+  assert.doesNotMatch(rodrigoIndividual, /limpieza/i);
+  assert.match(rodrigoGrouped, /próximas reservas confirmadas/);
+  assert.equal(buildNotificationMessages(rentals, "individual", "rodrigo").length, 2);
+  assert.doesNotMatch(`${rodrigoIndividual}\n${rodrigoGrouped}`, /Airbnb|Booking|familia|Privado/i);
+  assert.equal(coordinationRecipient("rodrigo").whatsapp, "56958171234");
 });

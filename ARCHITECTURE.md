@@ -9,13 +9,13 @@ La plataforma es una PWA estática con una única unidad de aplicación (`app.js
 - **Comentarios:** notas cronológicas asociadas a una limpieza.
 - **Reservas sanitizadas:** rangos de solo lectura provenientes de Airbnb,
   Booking y reservas particulares, visibles únicamente como “Reserva”.
-- **Avisos a Beatriz:** estado actual, lotes de WhatsApp e historial auditable
-  asociados a identidades opacas de reserva.
+- **Avisos de coordinación:** Beatriz y Rodrigo mantienen por separado estado
+  actual, lotes de WhatsApp e historial auditable asociados a identidades opacas.
 - **Acceso operativo:** bloqueo de la aplicación y modo de administración para acciones de escritura.
 
 El PIN y la preferencia de bloqueo pertenecen al cliente. Los arriendos, limpiezas y comentarios son datos de dominio y solo circulan por `state.store`.
 
-La presentación deriva una ventana móvil de 31 fechas desde `state.view.start`.
+La presentación deriva una ventana móvil de 30 fechas desde `state.view.start`.
 Mientras `followsToday` está activo, un reconciliador diario mueve el inicio a
 la fecha local vigente; la navegación manual desactiva ese seguimiento hasta
 usar `Desde hoy`. Esta regla sólo cambia la proyección visible, no la persistencia.
@@ -39,7 +39,8 @@ entradas en `rentals` y evita mostrar proveedor, grupo, huésped, UID o notas.
 La identidad opaca permite detectar altas, cambios y retiros sin conocer el
 proveedor. La memoria registra por separado “WhatsApp abierto” y “Envío
 confirmado”; los avisos pueden prepararse individualmente o agrupados y siempre
-requieren confirmación humana.
+requieren confirmación humana. La clave del destinatario selecciona tablas y
+estado independientes, por lo que confirmar a Beatriz no confirma a Rodrigo.
 
 ## Superficies de entrega
 

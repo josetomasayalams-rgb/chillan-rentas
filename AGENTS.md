@@ -29,7 +29,7 @@ Aunque las capas conviven en un solo archivo, la frontera es real: eventos y ren
 - La interfaz y los nuevos textos permanecen en español.
 - Si cambias `app.js` o `styles.css`, incrementa `VERSION` y el query string de `index.html` juntos.
 - El PIN en el cliente es una barrera de uso, no un mecanismo de autorización del backend.
-- `render()` reconstruye la ventana completa de 31 días: no introduzcas diffs incrementales sin una necesidad medida.
+- `render()` reconstruye la ventana completa de 30 días: no introduzcas diffs incrementales sin una necesidad medida.
 
 ## Comandos
 

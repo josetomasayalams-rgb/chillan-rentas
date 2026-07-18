@@ -33,10 +33,11 @@ El único código de terceros cargado por la aplicación es el cliente Supabase 
 El despliegue público debe acompañarse con un control de acceso externo si la privacidad requerida supera el modelo familiar actual.
 
 Los mensajes preparados para Beatriz contienen únicamente llegada, salida y
-la solicitud de limpieza. La plataforma no recibe el origen de la reserva,
+la solicitud de limpieza. Los de Rodrigo contienen llegada, salida y la
+solicitud de coordinación de acceso. Ninguno incluye origen de la reserva,
 grupo, huésped, UID ni notas privadas.
 
-La ventana móvil de 31 días se calcula exclusivamente con fechas ya disponibles
+La ventana móvil de 30 días se calcula exclusivamente con fechas ya disponibles
 en el cliente. Cruzar al mes siguiente no amplía el contrato `/availability`,
 no solicita campos adicionales y no altera los permisos de escritura.
 
