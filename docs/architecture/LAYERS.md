@@ -13,7 +13,7 @@ Adaptadores: localStorage | cliente Supabase
         ↓
 Persistencia: schema.sql
 
-Fuente pública: /availability → state.calendarSource → reservas celestes de solo lectura → limpieza automática
+Fuente pública: /availability → state.calendarSource → reservas de solo lectura con tonos alternados → limpieza automática
                                                        ↓
                                    reconciliación → state.store → avisos
 ```

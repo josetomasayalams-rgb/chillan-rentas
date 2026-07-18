@@ -18,7 +18,7 @@
 
   <link rel="preload" as="image" href="assets/chillan-bg-mobile.jpg" fetchpriority="high" media="(max-width:900px)">
 
-  <link rel="stylesheet" href="styles.css?v=29">
+  <link rel="stylesheet" href="styles.css?v=30">
 </head>
 <body class="locked">
   <div class="bg-layer" aria-hidden="true"></div>
@@ -223,12 +223,12 @@
     <div class="modal glass modal-wide beatriz-modal" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="beatriz-title">
       <h2 id="beatriz-title">📱 Avisos para Beatriz</h2>
       <p class="modal-tip" id="beatriz-summary">Cargando avisos…</p>
-      <label class="include-confirmed">
+      <label class="include-confirmed" data-beatriz-admin>
         <input type="checkbox" id="beatriz-include-confirmed">
         Incluir reservas ya avisadas para reenviar
       </label>
       <div class="beatriz-list" id="beatriz-list"></div>
-      <fieldset class="message-mode">
+      <fieldset class="message-mode" data-beatriz-admin>
         <legend>Cómo preparar los mensajes seleccionados</legend>
         <label><input type="radio" name="beatriz-mode" value="grouped" checked> Un solo mensaje agrupado</label>
         <label><input type="radio" name="beatriz-mode" value="individual"> Mensajes separados</label>
@@ -236,7 +236,7 @@
       <div class="beatriz-separate-queue" id="beatriz-separate-queue" hidden></div>
       <div class="modal-actions">
         <button class="btn ghost" id="beatriz-close" type="button">Cerrar</button>
-        <button class="btn wa-btn" id="beatriz-prepare" type="button" disabled>Selecciona reservas</button>
+        <button class="btn wa-btn" id="beatriz-prepare" data-beatriz-admin type="button" disabled>Selecciona reservas</button>
       </div>
     </div>
   </div>
@@ -255,6 +255,6 @@
   </div>
 
 
-  <script src="app.js?v=29" defer></script>
+  <script src="app.js?v=30" defer></script>
 </body>
 </html>
