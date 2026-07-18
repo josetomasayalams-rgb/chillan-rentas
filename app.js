@@ -40,15 +40,17 @@ const CONFIG = {
   sourceOrder:   ["calendar","direct","airbnb","booking","other","arriendo"],
 
   weekStart: 1,        // 1 = lunes
+  rollingDays: 31,     // hoy + 30 días para una planificación mensual continua
   yearMin:   2020,
   yearMax:   2040,
   maxLanes:  3,        // barras visibles por celda antes de "+N"
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "30";
+const VERSION = "31";
 const MONTHS  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+const MON_SHORT = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
 const LS = {
   rentals:     "ops-rentals",
@@ -64,7 +66,7 @@ const LS = {
 
 // ---------- Estado ----------
 const state = {
-  view: { y: 0, m: 0 },
+  view: { start: null, followsToday: true },
   rentals:   [],
   cleanings: [],
   comments:  [],
@@ -76,6 +78,7 @@ const state = {
   calendarStatus: { status: "loading", fromCache: false, error: null, lastSuccessfulSyncAt: null },
   calendarSyncing: false,
   calendarRefreshHandle: null,
+  rollingWindowHandle: null,
   notificationReconciling: false,
   pendingWhatsAppBatch: null,
   separateQueue: [],
@@ -153,6 +156,26 @@ function addDays(iso, n){
   const { y, m, d } = parseISO(iso);
   const dt = new Date(y, m, d + n);
   return isoOf(dt.getFullYear(), dt.getMonth(), dt.getDate());
+}
+function rollingMonthWindow(startIso, days=CONFIG.rollingDays){
+  const dates = Array.from({ length: days }, (_, index) => addDays(startIso, index));
+  return {
+    start: startIso,
+    endExclusive: addDays(startIso, days),
+    endInclusive: dates[dates.length - 1],
+    dates,
+  };
+}
+function reconcileRollingView(view, currentDate=todayIso()){
+  if (view?.followsToday === false) return { start: view.start, followsToday: false };
+  return { start: currentDate, followsToday: true };
+}
+function syncRollingWindowToToday(){
+  const next = reconcileRollingView(state.view);
+  if (next.start === state.view.start && next.followsToday === state.view.followsToday) return false;
+  state.view = next;
+  render();
+  return true;
 }
 
 function simpleStableHash(value){
@@ -1256,14 +1279,11 @@ function openRentalFormFromBrush(){
 }
 
 function renderNav(){
-  const monthSel = document.getElementById("month");
-  const yearSel  = document.getElementById("year");
-  if (!monthSel.options.length){
-    MONTHS.forEach((m,i) => monthSel.add(new Option(m, i)));
-    for (let y=CONFIG.yearMin; y<=CONFIG.yearMax; y++) yearSel.add(new Option(y, y));
-  }
-  monthSel.value = state.view.m;
-  yearSel.value  = state.view.y;
+  const range = rollingMonthWindow(state.view.start);
+  const label = document.getElementById("range-label");
+  label.textContent = `${prettyShort(range.start)} — ${prettyShort(range.endInclusive)}`;
+  label.title = `Planificación de ${CONFIG.rollingDays} días consecutivos`;
+  label.classList.toggle("following-today", state.view.followsToday);
 }
 
 function renderLegend(){
@@ -1288,11 +1308,11 @@ function renderHint(){
 }
 
 function renderGrid(){
-  const { y, m } = state.view;
-  const first = new Date(y, m, 1);
-  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const windowRange = rollingMonthWindow(state.view.start);
+  const firstParts = parseISO(windowRange.start);
+  const first = new Date(firstParts.y, firstParts.m, firstParts.d);
   const lead = (first.getDay() - CONFIG.weekStart + 7) % 7;
-  const totalCells = Math.ceil((lead + daysInMonth) / 7) * 7;
+  const totalCells = Math.ceil((lead + windowRange.dates.length) / 7) * 7;
 
   const n = new Date();
   const todayStr = isoOf(n.getFullYear(), n.getMonth(), n.getDate());
@@ -1301,6 +1321,9 @@ function renderGrid(){
 
   const grid = document.getElementById("grid");
   grid.innerHTML = "";
+  grid.dataset.windowStart = windowRange.start;
+  grid.dataset.windowEnd = windowRange.endInclusive;
+  grid.dataset.windowDays = String(windowRange.dates.length);
 
   const wd = document.getElementById("weekdays");
   if (!wd.children.length){
@@ -1308,14 +1331,15 @@ function renderGrid(){
   }
 
   for (let i=0; i<totalCells; i++){
-    const dayNum = i - lead + 1;
+    const dateIndex = i - lead;
     const cell = document.createElement("div");
-    if (dayNum < 1 || dayNum > daysInMonth){
+    if (dateIndex < 0 || dateIndex >= windowRange.dates.length){
       cell.className = "cell blank";
       grid.appendChild(cell);
       continue;
     }
-    const dateStr = isoOf(y, m, dayNum);
+    const dateStr = windowRange.dates[dateIndex];
+    const { m, d: dayNum } = parseISO(dateStr);
     const isPast  = dateStr < todayStr;
     const isToday = dateStr === todayStr;
     cell.className = "cell"
@@ -1333,7 +1357,7 @@ function renderGrid(){
 
     const num = document.createElement("div");
     num.className = "num";
-    num.textContent = dayNum;
+    num.innerHTML = `<span>${dayNum}</span>${dateIndex === 0 || dayNum === 1 ? `<small class="month-marker">${MON_SHORT[m]}</small>` : ""}`;
     cell.appendChild(num);
 
     const dayRentals = displayRentals
@@ -2518,9 +2542,10 @@ function setupLock(){
 function bind(){
   document.getElementById("prev").addEventListener("click", () => move(-1));
   document.getElementById("next").addEventListener("click", () => move(1));
-  document.getElementById("today").addEventListener("click", () => { state.view = today(); render(); });
-  document.getElementById("month").addEventListener("change", e => { state.view.m = +e.target.value; render(); });
-  document.getElementById("year").addEventListener("change",  e => { state.view.y = +e.target.value; render(); });
+  document.getElementById("today").addEventListener("click", () => {
+    state.view = { start: todayIso(), followsToday: true };
+    render();
+  });
 
   // Admin toggle
   document.getElementById("admin").addEventListener("click", toggleAdmin);
@@ -2627,6 +2652,7 @@ function bind(){
   window.addEventListener("focus", maybeShowWhatsAppConfirmation);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible"){
+      syncRollingWindowToToday();
       refreshCalendarAndNotifications();
       maybeShowWhatsAppConfirmation();
     }
@@ -2688,21 +2714,18 @@ function bind(){
 }
 
 function move(delta){
-  let { y, m } = state.view;
-  m += delta;
-  while (m < 0){ m += 12; y--; }
-  while (m > 11){ m -= 12; y++; }
-  if (y < CONFIG.yearMin) state.view = { y: CONFIG.yearMin, m: 0 };
-  else if (y > CONFIG.yearMax) state.view = { y: CONFIG.yearMax, m: 11 };
-  else state.view = { y, m };
+  const minStart = `${CONFIG.yearMin}-01-01`;
+  const maxStart = `${CONFIG.yearMax}-12-01`;
+  const candidate = addDays(state.view.start, delta * CONFIG.rollingDays);
+  const start = candidate < minStart ? minStart : candidate > maxStart ? maxStart : candidate;
+  state.view = { start, followsToday: false };
   render();
 }
 
 // ---------- Init ----------
 async function main(){
   try{
-    const t = today();
-    state.view = { y: t.y, m: t.m };
+    state.view = { start: todayIso(), followsToday: true };
     state.lockEnabled = isLockEnabled();
     state.calendarSource = makeCalendarSource(CONFIG.familyAvailabilityUrl);
     bind();
@@ -2712,6 +2735,8 @@ async function main(){
     updateLockToggle();
     setupLock();
     updateAdminUI();
+    clearInterval(state.rollingWindowHandle);
+    state.rollingWindowHandle = setInterval(syncRollingWindowToToday, 60 * 1000);
     document.title += "  ·  v" + VERSION;
   }catch(err){
     console.error("Init error:", err);
@@ -2740,7 +2765,9 @@ if (typeof module !== "undefined" && module.exports){
     planBatchResolution,
     planCalendarCleaningReconciliation,
     planNotificationReconciliation,
+    reconcileRollingView,
     reservationTone,
+    rollingMonthWindow,
     sourceMeta,
     CHECKIN_TIME,
     CHECKOUT_TIME,

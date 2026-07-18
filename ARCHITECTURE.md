@@ -15,6 +15,11 @@ La plataforma es una PWA estática con una única unidad de aplicación (`app.js
 
 El PIN y la preferencia de bloqueo pertenecen al cliente. Los arriendos, limpiezas y comentarios son datos de dominio y solo circulan por `state.store`.
 
+La presentación deriva una ventana móvil de 31 fechas desde `state.view.start`.
+Mientras `followsToday` está activo, un reconciliador diario mueve el inicio a
+la fecha local vigente; la navegación manual desactiva ese seguimiento hasta
+usar `Desde hoy`. Esta regla sólo cambia la proyección visible, no la persistencia.
+
 ## Flujo
 
 ```text

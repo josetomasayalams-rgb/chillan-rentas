@@ -31,6 +31,12 @@ Fuente pública: /availability → state.calendarSource → reservas de solo lec
 
 Las preferencias locales del dispositivo —por ejemplo, si el bloqueo está activo— pueden usar `localStorage` mediante helpers dedicados. Esa excepción no autoriza a la UI a leer o escribir arriendos, limpiezas o comentarios fuera de `state.store`.
 
+La ventana móvil de 31 días pertenece a Presentación/Aplicación. Se deriva de
+`state.view.start`, se reconcilia con la fecha local mientras `followsToday`
+está activo y no consulta directamente ningún adaptador. Navegar un periodo sólo
+cambia estado de vista; reservas, limpiezas y avisos siguen entrando por sus
+puertos existentes.
+
 `makeCalendarSource()` es el único punto que consulta calendarios. Recibe
 rangos de fechas sanitizados con identidad HMAC opaca y nunca inserta esas
 entradas en `rentals`. La reconciliación escribe únicamente el estado operativo

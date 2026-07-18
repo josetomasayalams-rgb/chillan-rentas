@@ -11,6 +11,10 @@ La familia puede consultar arriendos, coordinar la limpieza de salida y dejar co
 
 ## Reglas observables
 
+- El calendario muestra 31 días consecutivos desde hoy, aunque cruce al mes
+  siguiente, y avanza automáticamente una fecha cada día.
+- Las flechas recorren periodos completos de 31 días; “Desde hoy” vuelve al
+  rango vigente y reactiva su seguimiento diario.
 - Toda estadía aparece como un único tipo “Reserva”; las consecutivas alternan
   dos tonos estables sin que el color revele su plataforma de origen.
 - Cada barra muestra explícitamente check-in 15:00 y check-out 12:00.
