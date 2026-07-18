@@ -18,7 +18,7 @@
 
   <link rel="preload" as="image" href="assets/chillan-bg-mobile.jpg" fetchpriority="high" media="(max-width:900px)">
 
-  <link rel="stylesheet" href="styles.css?v=31">
+  <link rel="stylesheet" href="styles.css?v=32">
 </head>
 <body class="locked">
   <div class="bg-layer" aria-hidden="true"></div>
@@ -46,12 +46,13 @@
         <p class="subtitle">Reservas y operaciones</p>
       </div>
       <nav class="nav">
-        <button id="prev" class="btn glass icon" aria-label="Periodo anterior de 31 días">‹</button>
+        <button id="prev" class="btn glass icon" aria-label="Periodo anterior de 30 días">‹</button>
         <output id="range-label" class="range-label glass-soft" aria-live="polite"></output>
-        <button id="next" class="btn glass icon" aria-label="Periodo siguiente de 31 días">›</button>
+        <button id="next" class="btn glass icon" aria-label="Periodo siguiente de 30 días">›</button>
         <button id="today" class="btn glass">Desde hoy</button>
         <button id="add" class="btn glass primary admin-only" title="Crear nueva reserva">+ Reserva</button>
-        <button id="wa-last" class="btn glass wa-btn" disabled title="Abrir bandeja de avisos para Beatriz">📱 Beatriz</button>
+        <button id="wa-beatriz" class="btn glass wa-btn coordination-btn" disabled title="Abrir bandeja de avisos para Beatriz">📱 Beatriz</button>
+        <button id="wa-rodrigo" class="btn glass wa-btn coordination-btn" disabled title="Abrir bandeja de avisos para Rodrigo">📱 Rodrigo</button>
         <button id="list" class="btn glass admin-only" title="Ver todas las reservas">📋 Reservas</button>
         <button id="undo" class="btn glass" disabled title="No hay nada que deshacer">↩ Deshacer</button>
       </nav>
@@ -73,6 +74,7 @@
     </div>
 
     <section class="calendar">
+      <div class="month-span" id="month-span" role="group"></div>
       <div class="weekdays" id="weekdays"></div>
       <div class="grid" id="grid"></div>
     </section>
@@ -209,7 +211,7 @@
   <div class="modal-overlay" id="list-modal" hidden>
     <div class="modal glass modal-wide" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="list-title">
       <h2 id="list-title">📋 Reservas</h2>
-      <p class="modal-tip">Las reservas sincronizadas son de solo lectura. Puedes preparar el mensaje de limpieza para Beatriz desde cualquier fila.</p>
+      <p class="modal-tip">Las reservas sincronizadas son de solo lectura. Puedes preparar avisos para Beatriz o Rodrigo desde cualquier fila.</p>
       <div class="rentals-list" id="rentals-list"></div>
       <div class="modal-actions">
         <button class="btn ghost" id="list-close" type="button">Cerrar</button>
@@ -218,24 +220,24 @@
   </div>
 
   <!-- Bandeja operativa de avisos de limpieza; disponible sin modo admin. -->
-  <div class="modal-overlay" id="beatriz-modal" hidden>
-    <div class="modal glass modal-wide beatriz-modal" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="beatriz-title">
-      <h2 id="beatriz-title">📱 Avisos para Beatriz</h2>
-      <p class="modal-tip" id="beatriz-summary">Cargando avisos…</p>
-      <label class="include-confirmed" data-beatriz-admin>
-        <input type="checkbox" id="beatriz-include-confirmed">
+  <div class="modal-overlay" id="coordination-modal" hidden>
+    <div class="modal glass modal-wide coordination-modal" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="coordination-title">
+      <h2 id="coordination-title">📱 Avisos de coordinación</h2>
+      <p class="modal-tip" id="coordination-summary">Cargando avisos…</p>
+      <label class="include-confirmed" data-coordination-admin>
+        <input type="checkbox" id="coordination-include-confirmed">
         Incluir reservas ya avisadas para reenviar
       </label>
-      <div class="beatriz-list" id="beatriz-list"></div>
-      <fieldset class="message-mode" data-beatriz-admin>
+      <div class="coordination-list" id="coordination-list"></div>
+      <fieldset class="message-mode" data-coordination-admin>
         <legend>Cómo preparar los mensajes seleccionados</legend>
-        <label><input type="radio" name="beatriz-mode" value="grouped" checked> Un solo mensaje agrupado</label>
-        <label><input type="radio" name="beatriz-mode" value="individual"> Mensajes separados</label>
+        <label><input type="radio" name="coordination-mode" value="grouped" checked> Un solo mensaje agrupado</label>
+        <label><input type="radio" name="coordination-mode" value="individual"> Mensajes separados</label>
       </fieldset>
-      <div class="beatriz-separate-queue" id="beatriz-separate-queue" hidden></div>
+      <div class="coordination-separate-queue" id="coordination-separate-queue" hidden></div>
       <div class="modal-actions">
-        <button class="btn ghost" id="beatriz-close" type="button">Cerrar</button>
-        <button class="btn wa-btn" id="beatriz-prepare" data-beatriz-admin type="button" disabled>Selecciona reservas</button>
+        <button class="btn ghost" id="coordination-close" type="button">Cerrar</button>
+        <button class="btn wa-btn" id="coordination-prepare" data-coordination-admin type="button" disabled>Selecciona reservas</button>
       </div>
     </div>
   </div>
@@ -254,6 +256,6 @@
   </div>
 
 
-  <script src="app.js?v=31" defer></script>
+  <script src="app.js?v=32" defer></script>
 </body>
 </html>

@@ -11,9 +11,9 @@ La familia puede consultar arriendos, coordinar la limpieza de salida y dejar co
 
 ## Reglas observables
 
-- El calendario muestra 31 días consecutivos desde hoy, aunque cruce al mes
-  siguiente, y avanza automáticamente una fecha cada día.
-- Las flechas recorren periodos completos de 31 días; “Desde hoy” vuelve al
+- El calendario muestra 30 días consecutivos desde hoy, aunque cruce al mes
+  siguiente, separa los meses con una franja proporcional y resalta el día 1.
+- Las flechas recorren periodos completos de 30 días; “Desde hoy” vuelve al
   rango vigente y reactiva su seguimiento diario.
 - Toda estadía aparece como un único tipo “Reserva”; las consecutivas alternan
   dos tonos estables sin que el color revele su plataforma de origen.
@@ -22,16 +22,16 @@ La familia puede consultar arriendos, coordinar la limpieza de salida y dejar co
   UID ni notas, y son de solo lectura.
 - Cada reserva manual o sincronizada genera automáticamente su limpieza de checkout.
 - La salida permanece visible con su botón hasta confirmar que el aseo está listo.
-- Cada reserva permite preparar un mensaje para Beatriz con llegada, salida y
-  solicitud de disponibilidad para la limpieza; WhatsApp requiere confirmación humana.
+- Cada reserva permite preparar mensajes para Beatriz (limpieza) y Rodrigo
+  (conserjería) con llegada y salida; WhatsApp requiere confirmación humana.
 - La bandeja selecciona una o varias reservas pendientes y permite preparar un
   mensaje agrupado o mensajes separados.
 - El operador sin modo administrador sólo ve los avisos pendientes. Preparar,
   abrir, confirmar, corregir o reenviar mensajes requiere modo administrador.
 - La plataforma distingue “Pendiente”, “WhatsApp abierto”, “Envío confirmado”
   y “Requiere nuevo aviso por cambio”; abrir WhatsApp nunca confirma el envío.
-- La confirmación se comparte por Supabase, conserva historial y puede
-  corregirse o reenviarse explícitamente.
+- Cada destinatario conserva en Supabase su propia confirmación e historial,
+  que pueden corregirse o reenviarse explícitamente sin afectar al otro.
 - Los calendarios se actualizan al entrar, al volver a la aplicación, cada cinco
   minutos mientras está visible y mediante el botón “Actualizar”.
 - El modo local conserva la operación en el dispositivo y avisa que no está sincronizado.

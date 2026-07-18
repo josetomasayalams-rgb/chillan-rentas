@@ -20,7 +20,7 @@ PIN admin: `2407` (cambiar en `app.js` → `CONFIG.adminPin`).
 
 1. **Crear proyecto Supabase** → [supabase.com](https://supabase.com).
 2. **SQL Editor** → New query → pegar el contenido de `schema.sql` → Run.
-   Crea las tablas de arriendos, limpiezas y memoria de avisos a Beatriz + RLS + realtime.
+   Crea las tablas de arriendos, limpiezas y las memorias independientes de avisos a Beatriz y Rodrigo + RLS + realtime.
 3. **Project Settings → API** → copiar **Project URL** y **anon public key**.
 4. Pegar en `app.js` arriba (líneas ~13-14, `supabaseUrl` y `supabaseAnonKey`).
 5. **Cambiar los PINes** en `app.js`:
@@ -30,7 +30,7 @@ PIN admin: `2407` (cambiar en `app.js` → `CONFIG.adminPin`).
 
 ## Cómo se usa
 
-- **Vista móvil** (`/`, en celular): PIN → calendario. La vista parte hoy y muestra 31 días consecutivos, aunque cruce al mes siguiente; avanza automáticamente cada día. Las flechas recorren periodos de 31 días y **Desde hoy** reactiva el seguimiento diario. Toda estadía se muestra como una única **Reserva**, sin revelar su origen. Las reservas consecutivas alternan azul y violeta y conservan el mismo tono durante toda la estadía. Los extremos dicen explícitamente **Check-in 15:00** y **Check-out 12:00**. En cada check-out aparece automáticamente el botón para confirmar que el aseo está listo.
+- **Vista móvil** (`/`, en celular): PIN → calendario. La vista parte hoy y muestra 30 días consecutivos, aunque cruce al mes siguiente; avanza automáticamente cada día. Una franja proporcional indica cuántos días visibles corresponden a cada mes y el día 1 queda resaltado. Las flechas recorren periodos de 30 días y **Desde hoy** reactiva el seguimiento diario. Toda estadía se muestra como una única **Reserva**, sin revelar su origen. Las reservas consecutivas alternan azul y violeta y conservan el mismo tono durante toda la estadía. Los extremos dicen explícitamente **Check-in 15:00** y **Check-out 12:00**. En cada check-out aparece automáticamente el botón para confirmar que el aseo está listo.
 - **Modo admin**: botoncito `🔒 Admin` en el footer → clave admin → habilita creación de arriendos por **brush selection** (tocá un día para check-in 15:00, otro para check-out 12:00). Pill flotante con "Confirmar" o "+ Detalles" para abrir el form con fechas pre-llenas.
 - **Calendarios vinculados**: el contrato público aporta Airbnb, Booking y
   reservas particulares. Aquí todos aparecen únicamente como **Reserva**,
@@ -40,6 +40,9 @@ PIN admin: `2407` (cambiar en `app.js` → `CONFIG.adminPin`).
   separados o agrupados. Abrir WhatsApp se registra
   aparte; al volver, la persona confirma si realmente lo envió. El historial se
   comparte por Supabase y permite corregir o reenviar.
+- **WhatsApp para Rodrigo**: usa el mismo flujo, selección individual o agrupada
+  y confirmación humana, pero con texto de conserjería y una memoria totalmente
+  independiente de la de Beatriz.
 
 ## Archivos
 
@@ -59,6 +62,9 @@ PIN admin: `2407` (cambiar en `app.js` → `CONFIG.adminPin`).
 - `beatriz_notifications`, `beatriz_notification_batches` y
   `beatriz_notification_events` guardan estado e historial usando solo la
   identidad opaca y las fechas sanitizadas de cada reserva.
+- `rodrigo_notifications`, `rodrigo_notification_batches` y
+  `rodrigo_notification_events` conservan el mismo ciclo para conserjería sin
+  mezclar confirmaciones con Beatriz.
 - RLS abierto por diseño (la defensa es la URL staying dentro del círculo familiar). Si querés cerrar, agregá Supabase Auth + passcode compartido.
 
 ## Cache busting

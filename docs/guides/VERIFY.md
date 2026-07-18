@@ -15,24 +15,24 @@ que las estadías consecutivas alternen tonos sin cambiar de color durante su
 duración, que cada reserva sincronizada tenga un botón de aseo en checkout y que una
 estadía finalizada permanezca visible hasta confirmar la limpieza.
 
-Confirma que la grilla exponga exactamente 31 fechas consecutivas desde hoy,
-incluya el cambio al mes siguiente, muestre el rango correcto en el encabezado
-y no inserte huecos entre fechas. Las flechas deben avanzar o retroceder 31 días;
+Confirma que la grilla exponga exactamente 30 fechas consecutivas desde hoy,
+incluya una franja con nombre y cantidad de días por mes, resalte el día 1,
+muestre el rango correcto y no inserte huecos. Las flechas deben mover 30 días;
 `Desde hoy` debe restaurar el rango vigente y el seguimiento diario.
 
-Para la bandeja de Beatriz, sin enviar un mensaje real, verifica:
+Para las bandejas independientes de Beatriz y Rodrigo, sin enviar un mensaje real, verifica:
 
 1. actualización al entrar, al volver al foco y mediante “Actualizar”;
 2. selección de una y varias reservas pendientes;
 3. preparación agrupada y cola de mensajes separados;
 4. transición de “WhatsApp abierto” a “Envío confirmado” o “Pendiente”;
 5. corrección de una confirmación y reenvío explícito;
-6. persistencia después de recargar y ausencia de fuente, huésped, UID o notas;
+6. persistencia separada después de recargar y ausencia de fuente, huésped, UID o notas;
 7. diseño sin desborde en un viewport móvil.
 
 En un viewport de 390 px confirma además que los extremos muestren completos
 `Check-in 15:00` y `Check-out 12:00`. Sin modo administrador, la bandeja de
-Beatriz debe conservar el botón y el conteo de pendientes, pero no debe mostrar
+Cada destinatario debe conservar su botón y conteo de pendientes, pero no debe mostrar
 checkboxes, mensajes ya abiertos/confirmados ni controles para preparar o corregir.
 
 Si falla una frontera, sigue la ruta de remediación incluida en el mensaje y no extiendas `known-violations.json`. Una violación heredada solo podría entrar en la línea base durante una inicialización explícita del arnés.

@@ -30,10 +30,11 @@ válida y nunca se insertan en `rentals` ni generan escrituras sobre el
 contrato sanitizado de Airbnb, Booking y reservas particulares.
 
 La identidad HMAC de cada rango sí se usa como clave de
-`beatriz_notifications`. Esta tabla, sus lotes y su historial pertenecen a
-Operaciones: registran coordinación de limpieza, nunca modifican ni reexportan
-la reserva de origen. “WhatsApp abierto” y “Envío confirmado” son estados
-distintos.
+`beatriz_notifications` y `rodrigo_notifications`. Cada destinatario tiene sus
+propios lotes e historial dentro de Operaciones: Beatriz registra coordinación
+de limpieza y Rodrigo coordinación de conserjería. Ninguna memoria modifica ni
+reexporta la reserva de origen. “WhatsApp abierto” y “Envío confirmado” son
+estados distintos y confirmar un destinatario nunca confirma al otro.
 
 Si el backend falla, el adaptador local encola escrituras de avisos con IDs
 idempotentes. `initStore()` las reproduce en orden al recuperar Supabase y solo

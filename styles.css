@@ -178,6 +178,20 @@ body.admin-mode .admin-only{ display:inline-flex; }
 
 /* ---------- Calendario ---------- */
 .calendar{ display:flex; flex-direction:column; gap:8px; }
+.month-span{
+  display:flex; gap:6px; min-height:46px; padding:5px;
+  border:1px solid var(--glass-brd-soft); border-radius:14px;
+  background:rgba(3,7,18,.26);
+}
+.month-span-segment{
+  flex:var(--month-days) 1 0; min-width:0; display:flex; align-items:center;
+  justify-content:space-between; gap:8px; padding:8px 11px; border-radius:10px;
+  border:1px solid rgba(255,255,255,.18);
+}
+.month-span-segment.tone-0{ background:linear-gradient(135deg,rgba(14,165,233,.30),rgba(14,165,233,.12)); }
+.month-span-segment.tone-1{ background:linear-gradient(135deg,rgba(168,85,247,.32),rgba(168,85,247,.12)); }
+.month-span-segment strong{ min-width:0; overflow:hidden; text-overflow:ellipsis; font-size:12px; letter-spacing:.06em; text-transform:uppercase; }
+.month-span-segment small{ flex:0 0 auto; color:var(--text-dim); font-size:10px; white-space:nowrap; }
 .weekdays{ display:grid; grid-template-columns:repeat(7,1fr); gap:6px; }
 .weekdays div{
   text-align:center; font-size:12px; font-weight:600; color:var(--text-dim);
@@ -199,6 +213,9 @@ body.admin-mode .admin-only{ display:inline-flex; }
 .cell.blank{ background:transparent; border-color:transparent; cursor:default; }
 .cell .num{ display:flex; align-items:baseline; gap:3px; font-size:13px; font-weight:600; opacity:.92; }
 .month-marker{ font-size:8px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; color:var(--text-dim); }
+.month-marker.prominent{ padding:2px 4px; border-radius:999px; background:#fbbf24; color:#271600; box-shadow:0 0 0 1px rgba(255,255,255,.32); }
+.cell.month-tone-1:not(.occupied){ background:rgba(168,85,247,.09); }
+.cell.month-start{ border:2px solid rgba(251,191,36,.95); box-shadow:inset 4px 0 0 rgba(251,191,36,.58),0 0 16px rgba(251,191,36,.20); }
 .cell.today{ box-shadow:0 0 0 2px #fff inset, 0 0 18px rgba(255,255,255,.35); }
 .cell.occupied{
   background:rgba(255,255,255,.10);
@@ -643,8 +660,8 @@ body.admin-mode .app{ box-shadow:0 0 0 2px #f59e0b, var(--shadow); }
 .rl-actions .pbtn{ font-size:11px; padding:5px 9px; }
 .empty-row{ text-align:center; color:var(--text-faint); font-size:14px; padding:24px 8px; }
 
-/* Nav: el botón "📱 Último" es verde WhatsApp, más compacto */
-#wa-last.wa-btn{
+/* Botones de coordinación por WhatsApp. */
+.coordination-btn.wa-btn{
   background:linear-gradient(180deg, rgba(37,211,102,.32), rgba(37,211,102,.18));
   border-color:rgba(37,211,102,.55);
   color:#b8f5cf;
@@ -652,30 +669,34 @@ body.admin-mode .app{ box-shadow:0 0 0 2px #f59e0b, var(--shadow); }
   font-size:13px;
   padding:8px 12px;
 }
-#wa-last.wa-btn:hover{ background:linear-gradient(180deg, rgba(37,211,102,.45), rgba(37,211,102,.28)); }
-#wa-last.wa-btn:disabled{ opacity:.4; cursor:not-allowed; background:rgba(255,255,255,.05); border-color:var(--glass-brd-soft); color:var(--text-faint); }
+.coordination-btn.wa-btn:hover{ background:linear-gradient(180deg, rgba(37,211,102,.45), rgba(37,211,102,.28)); }
+.coordination-btn.wa-btn:disabled{ opacity:.4; cursor:not-allowed; background:rgba(255,255,255,.05); border-color:var(--glass-brd-soft); color:var(--text-faint); }
 
 .sync-btn{ font-size:12px; padding:6px 10px; }
-.beatriz-modal{ max-width:760px; }
+.coordination-modal{
+  max-width:760px;
+  background:linear-gradient(180deg,rgba(34,47,79,.97),rgba(15,23,42,.98));
+  box-shadow:0 24px 70px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.14);
+}
 .include-confirmed{
   display:flex; align-items:center; gap:8px; margin:0 0 12px;
   color:var(--text-dim); font-size:13px;
 }
-.beatriz-list{ display:flex; flex-direction:column; gap:8px; max-height:44dvh; overflow:auto; margin-bottom:12px; }
-.beatriz-row{
+.coordination-list{ display:flex; flex-direction:column; gap:8px; max-height:44dvh; overflow:auto; margin-bottom:12px; }
+.coordination-row{
   display:flex; align-items:center; justify-content:space-between; gap:12px;
   padding:11px 12px; border:1px solid var(--glass-brd-soft); border-radius:12px;
   background:rgba(255,255,255,.05);
 }
-.beatriz-row.status-needs_update{ border-color:rgba(245,158,11,.55); background:rgba(245,158,11,.08); }
-.beatriz-row.status-confirmed{ opacity:.78; }
-.beatriz-select{ display:flex; align-items:center; gap:10px; min-width:0; flex:1; cursor:pointer; }
-.beatriz-select input{ width:18px; height:18px; accent-color:#25d366; flex:0 0 auto; }
+.coordination-row.status-needs_update{ border-color:rgba(245,158,11,.55); background:rgba(245,158,11,.08); }
+.coordination-row.status-confirmed{ opacity:.78; }
+.coordination-select{ display:flex; align-items:center; gap:10px; min-width:0; flex:1; cursor:pointer; }
+.coordination-select input{ width:18px; height:18px; accent-color:#25d366; flex:0 0 auto; }
 .selection-placeholder{ width:18px; flex:0 0 18px; }
-.beatriz-select span span, .beatriz-select > span:last-child{ display:flex; flex-direction:column; gap:3px; min-width:0; }
-.beatriz-select strong{ color:#fff; font-size:13px; }
-.beatriz-select small{ color:var(--text-faint); font-size:11px; }
-.beatriz-row-state{ display:flex; align-items:center; justify-content:flex-end; gap:7px; flex-wrap:wrap; }
+.coordination-select span span, .coordination-select > span:last-child{ display:flex; flex-direction:column; gap:3px; min-width:0; }
+.coordination-select strong{ color:#fff; font-size:13px; }
+.coordination-select small{ color:var(--text-faint); font-size:11px; }
+.coordination-row-state{ display:flex; align-items:center; justify-content:flex-end; gap:7px; flex-wrap:wrap; }
 .notification-status{
   font-size:10px; font-weight:700; letter-spacing:.03em; text-transform:uppercase;
   padding:4px 7px; border:1px solid rgba(255,255,255,.22); border-radius:999px; color:var(--text-dim);
@@ -690,7 +711,7 @@ body.admin-mode .app{ box-shadow:0 0 0 2px #f59e0b, var(--shadow); }
 .message-mode legend{ padding:0 6px; color:var(--text-dim); font-size:12px; }
 .message-mode label{ display:flex; align-items:center; gap:6px; font-size:13px; }
 .message-mode input{ accent-color:#25d366; }
-.beatriz-separate-queue{
+.coordination-separate-queue{
   display:flex; flex-direction:column; gap:8px; margin:8px 0 12px; padding:12px;
   border-radius:12px; background:rgba(37,211,102,.08); border:1px solid rgba(37,211,102,.3);
 }
@@ -850,11 +871,17 @@ body.locked .app{
   .nav #next{ grid-column:4; grid-row:1; }
   .nav #today{ grid-column:1 / span 2; grid-row:2; width:100%; }
   .nav #undo{ grid-column:3 / span 2; grid-row:2; width:100%; }
+  .nav #wa-beatriz{ grid-column:1 / span 2; grid-row:3; width:100%; }
+  .nav #wa-rodrigo{ grid-column:3 / span 2; grid-row:3; width:100%; }
   body.admin-mode .nav #add{ grid-column:1 / span 2; grid-row:3; width:100%; }
-  .nav #wa-last{ grid-column:1 / -1; grid-row:3; width:100%; }
-  body.admin-mode .nav #wa-last{ grid-column:3 / span 2; grid-row:3; width:100%; }
-  body.admin-mode .nav #list{ grid-column:1 / -1; grid-row:4; width:100%; }
+  body.admin-mode .nav #wa-beatriz{ grid-column:3 / span 2; grid-row:3; width:100%; }
+  body.admin-mode .nav #wa-rodrigo{ grid-column:1 / -1; grid-row:4; width:100%; }
+  body.admin-mode .nav #list{ grid-column:1 / -1; grid-row:5; width:100%; }
   .hint-bar{ border-radius:12px; line-height:1.35; margin-bottom:10px; padding:8px 10px; }
+  .month-span{ min-height:42px; gap:4px; padding:4px; }
+  .month-span-segment{ padding:7px 6px; align-items:flex-start; flex-direction:column; justify-content:center; gap:1px; }
+  .month-span-segment strong{ font-size:10px; }
+  .month-span-segment small{ font-size:9px; }
   .weekdays, .grid{ gap:3px; }
   .weekdays div{ padding:4px 0; }
   .cell{ min-height:76px; padding:5px 4px 22px; border-radius:9px; }
@@ -874,8 +901,8 @@ body.locked .app{
   .mode-badge{ max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .modal-overlay{ align-items:end; padding:8px; }
   .modal{ width:100%; max-height:calc(100dvh - 16px - env(safe-area-inset-top)); overflow-y:auto; border-radius:18px 18px 14px 14px; }
-  .beatriz-row{ align-items:stretch; flex-direction:column; }
-  .beatriz-row-state{ justify-content:flex-start; padding-left:28px; }
+  .coordination-row{ align-items:stretch; flex-direction:column; }
+  .coordination-row-state{ justify-content:flex-start; padding-left:28px; }
   .message-mode{ flex-direction:column; gap:9px; }
   .popover{ max-height:calc(100dvh - 28px - env(safe-area-inset-bottom)); overflow-y:auto; padding-bottom:calc(14px + env(safe-area-inset-bottom)); }
   .lock-card{ width:min(100%, 360px); padding:24px 18px 20px; }
