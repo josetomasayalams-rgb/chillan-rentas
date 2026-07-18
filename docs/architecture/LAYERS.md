@@ -35,7 +35,8 @@ La ventana móvil de 30 días pertenece a Presentación/Aplicación. Se deriva d
 `state.view.start`, se reconcilia con la fecha local mientras `followsToday`
 está activo y no consulta directamente ningún adaptador. Navegar un periodo sólo
 cambia estado de vista; reservas, limpiezas y avisos siguen entrando por sus
-puertos existentes.
+puertos existentes. El borde y marcador dorados del día 1 son presentación pura;
+la vista no crea franjas ni estados persistidos para separar meses.
 
 `makeCalendarSource()` es el único punto que consulta calendarios. Recibe
 rangos de fechas sanitizados con identidad HMAC opaca y nunca inserta esas

@@ -24,4 +24,5 @@ mismos adaptadores `state.store`; no introduce dependencias nuevas en el cliente
 La planificación continua se implementa con aritmética de fechas nativa y un
 temporizador del navegador que reconcilia el inicio una vez por minuto. No usa
 una librería de calendario ni agrega persistencia: la ventana contiene 30 fechas
-derivadas y la navegación manual sólo modifica estado de presentación.
+derivadas y la navegación manual sólo modifica estado de presentación. El cruce
+de mes se representa con una clase visual en el día 1, sin capa ni dependencia nueva.

@@ -39,6 +39,7 @@ grupo, huésped, UID ni notas privadas.
 
 La ventana móvil de 30 días se calcula exclusivamente con fechas ya disponibles
 en el cliente. Cruzar al mes siguiente no amplía el contrato `/availability`,
-no solicita campos adicionales y no altera los permisos de escritura.
+no solicita campos adicionales y no altera los permisos de escritura. Marcar el
+día 1 en dorado, sin tintes por mes, es únicamente una decisión de presentación.
 
 Comunica incidentes a los administradores de la propiedad sin compartir datos de huéspedes por canales públicos.
