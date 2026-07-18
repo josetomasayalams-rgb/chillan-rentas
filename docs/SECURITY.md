@@ -22,7 +22,8 @@ Las políticas actuales permiten el uso compartido previsto desde el cliente pú
 | Escritura no autorizada en el backend | no existe identidad de usuario; las políticas son abiertas | Riesgo aceptado, pendiente de diseño |
 | Datos inconsistentes | restricciones SQL, claves foráneas y transiciones de estado | Parcial; falta unicidad de limpieza por arriendo |
 | Fallo del backend | degradación a almacenamiento local y aviso visible | En uso |
-| Fuga de proveedor o huésped desde calendarios | `/availability` entrega solo fechas y la UI muestra “Reservado” | En uso |
+| Fuga de proveedor o huésped desde calendarios | `/availability` entrega fechas e identidad HMAC opaca; la UI muestra “Reservado” | En uso |
+| Confundir apertura con entrega de WhatsApp | estados separados y confirmación humana posterior | En uso |
 | Texto no confiable | escape antes de insertarlo en la interfaz | En uso |
 
 ## Dependencias y despliegue

@@ -50,7 +50,7 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "27";
+const VERSION = "28";
 const MONTHS  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -59,6 +59,10 @@ const LS = {
   cleanings:   "ops-cleanings",
   comments:    "ops-comments",
   calendar:    "ops-calendar-availability",
+  notifications: "ops-beatriz-notifications",
+  notificationBatches: "ops-beatriz-notification-batches",
+  notificationEvents: "ops-beatriz-notification-events",
+  notificationOutbox: "ops-beatriz-notification-outbox",
   lockEnabled: "ops-lock-enabled",     // "1" = lock al iniciar; "0" = sin clave
 };
 
@@ -68,9 +72,18 @@ const state = {
   rentals:   [],
   cleanings: [],
   comments:  [],
+  notifications: [],
+  notificationBatches: [],
+  notificationEvents: [],
   calendarReservations: [],
   calendarSource: null,
   calendarStatus: { status: "loading", fromCache: false, error: null, lastSuccessfulSyncAt: null },
+  calendarSyncing: false,
+  calendarRefreshHandle: null,
+  notificationReconciling: false,
+  pendingWhatsAppBatch: null,
+  separateQueue: [],
+  inboxSelection: new Set(),
   store: null,
   admin: false,         // modo admin: permite crear/editar/cancelar
   brush: { start: null, end: null },   // selección de arriendo por click en celdas
@@ -78,6 +91,7 @@ const state = {
   schemaMissing: false, // true → fallback a localStore, mostrar banner
   _demoted: false,      // true = ya caímos a local por error en runtime
   _unsub: null,         // unsub del realtime / onChange, para retry limpio
+  remoteReloadTimer: null,
   _probeData: null,     // cache del loadAll() del probe (evita doble fetch)
   tickHandle: null,
   updatedAt: null,
@@ -125,6 +139,18 @@ function addDays(iso, n){
   return isoOf(dt.getFullYear(), dt.getMonth(), dt.getDate());
 }
 
+function simpleStableHash(value){
+  let a = 0x811c9dc5;
+  let b = 0x9e3779b9;
+  for (const ch of String(value)){
+    const code = ch.charCodeAt(0);
+    a = Math.imul(a ^ code, 0x01000193) >>> 0;
+    b = Math.imul(b ^ code, 0x85ebca6b) >>> 0;
+  }
+  const parts = [a, b, a ^ b, Math.imul(a + b, 0xc2b2ae35) >>> 0];
+  return parts.map(part => (part >>> 0).toString(16).padStart(8, "0")).join("");
+}
+
 function isValidIsoDate(value){
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) return false;
   const { y, m, d } = parseISO(value);
@@ -144,10 +170,14 @@ function normalizeAvailabilityPayload(payload){
     const startDate = range?.startDate;
     const endDate = range?.endDate;
     if (!isValidIsoDate(startDate) || !isValidIsoDate(endDate) || endDate <= startDate) return [];
-    const key = `${startDate}|${endDate}`;
+    const suppliedId = typeof range?.reservationId === "string" ? range.reservationId : "";
+    const reservationId = /^rsv_[a-f0-9]{32}$/.test(suppliedId)
+      ? suppliedId
+      : `rsv_${simpleStableHash(`${startDate}|${endDate}`)}`;
+    const key = reservationId;
     if (seen.has(key)) return [];
     seen.add(key);
-    return [{ startDate, endDate }];
+    return [{ reservationId, startDate, endDate }];
   }).sort((a,b) => a.startDate.localeCompare(b.startDate) || a.endDate.localeCompare(b.endDate));
 
   return {
@@ -212,8 +242,9 @@ function makeCalendarSource(url){
 }
 
 function calendarRangesToRentals(calendar){
-  return calendar.ranges.map((range, index) => ({
-    id: `calendar:${range.startDate}:${range.endDate}:${index}`,
+  return calendar.ranges.map((range) => ({
+    id: `calendar:${range.reservationId}`,
+    reservationId: range.reservationId,
     source: "calendar",
     reference: null,
     guest_name: null,
@@ -224,6 +255,98 @@ function calendarRangesToRentals(calendar){
     created_at: calendar.generatedAt,
     readOnly: true,
   }));
+}
+
+const NOTIFICATION_LABELS = {
+  pending: "Pendiente",
+  opened: "WhatsApp abierto",
+  confirmed: "Envío confirmado",
+  needs_update: "Requiere nuevo aviso por cambio",
+  removed: "Reserva retirada",
+  finished: "Finalizada",
+};
+
+function isNotificationActionable(notification){
+  return !!notification?.is_active && ["pending", "needs_update"].includes(notification.status);
+}
+
+function planNotificationReconciliation(existing, reservations, options = {}){
+  const nowIso = options.nowIso || new Date().toISOString();
+  const currentDate = options.currentDate || todayIso();
+  const known = new Map((existing || []).map(item => [item.reservation_id, item]));
+  const seen = new Set();
+  const upserts = [];
+  const events = [];
+
+  for (const rental of reservations || []){
+    const reservationId = rental.reservationId;
+    if (!/^rsv_[a-f0-9]{32}$/.test(reservationId || "")) continue;
+    seen.add(reservationId);
+    const previous = known.get(reservationId);
+    if (!previous){
+      const created = {
+        reservation_id: reservationId,
+        checkin_date: rental.checkin_date,
+        checkout_date: rental.checkout_date,
+        status: "pending",
+        is_active: true,
+        last_seen_at: nowIso,
+        opened_at: null,
+        confirmed_at: null,
+        last_batch_id: null,
+        revision: 1,
+        created_at: nowIso,
+        updated_at: nowIso,
+      };
+      upserts.push(created);
+      events.push({ reservation_id: reservationId, event_type: "created", previous_status: null, next_status: "pending", checkin_date: rental.checkin_date, checkout_date: rental.checkout_date });
+      continue;
+    }
+
+    const datesChanged = previous.checkin_date !== rental.checkin_date || previous.checkout_date !== rental.checkout_date;
+    const restored = !previous.is_active;
+    if (!datesChanged && !restored) continue;
+    const nextStatus = datesChanged && ["opened", "confirmed", "needs_update"].includes(previous.status)
+      ? "needs_update"
+      : "pending";
+    const updated = {
+      ...previous,
+      checkin_date: rental.checkin_date,
+      checkout_date: rental.checkout_date,
+      status: nextStatus,
+      is_active: true,
+      last_seen_at: nowIso,
+      confirmed_at: nextStatus === "needs_update" ? previous.confirmed_at : null,
+      revision: Number(previous.revision || 1) + (datesChanged ? 1 : 0),
+      updated_at: nowIso,
+    };
+    upserts.push(updated);
+    events.push({
+      reservation_id: reservationId,
+      event_type: datesChanged ? "dates_changed" : "restored",
+      previous_status: previous.status,
+      next_status: nextStatus,
+      checkin_date: rental.checkin_date,
+      checkout_date: rental.checkout_date,
+    });
+  }
+
+  for (const previous of existing || []){
+    if (!previous.is_active || seen.has(previous.reservation_id)) continue;
+    const finished = previous.checkout_date <= currentDate;
+    const nextStatus = finished ? "finished" : "removed";
+    upserts.push({ ...previous, status: nextStatus, is_active: false, updated_at: nowIso });
+    events.push({
+      reservation_id: previous.reservation_id,
+      event_type: nextStatus,
+      previous_status: previous.status,
+      next_status: nextStatus,
+      checkin_date: previous.checkin_date,
+      checkout_date: previous.checkout_date,
+    });
+  }
+
+  return { upserts, events };
 }
 
 function rentalsForDisplay(){
@@ -301,12 +424,21 @@ function uuid(){
 function localStore(){
   const get = (k) => { try { return JSON.parse(localStorage.getItem(k) || "[]"); } catch { return []; } };
   const set = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+  const queue = (method, value) => {
+    const outbox = get(LS.notificationOutbox);
+    outbox.push({ id: uuid(), method, value, queued_at: new Date().toISOString() });
+    set(LS.notificationOutbox, outbox);
+  };
   return {
+    kind: "local",
     async loadAll(){
       return {
         rentals:   get(LS.rentals),
         cleanings: get(LS.cleanings),
         comments:  get(LS.comments),
+        notifications: get(LS.notifications),
+        notificationBatches: get(LS.notificationBatches),
+        notificationEvents: get(LS.notificationEvents),
       };
     },
     async upsertRental(r){
@@ -328,9 +460,29 @@ function localStore(){
     async addComment(cm){
       const list = get(LS.comments); list.push(cm); set(LS.comments, list);
     },
+    async upsertNotification(notification){
+      const list = get(LS.notifications);
+      const index = list.findIndex(item => item.reservation_id === notification.reservation_id);
+      if (index >= 0) list[index] = notification; else list.push(notification);
+      set(LS.notifications, list);
+      queue("upsertNotification", notification);
+    },
+    async upsertNotificationBatch(batch){
+      const list = get(LS.notificationBatches);
+      const index = list.findIndex(item => item.id === batch.id);
+      if (index >= 0) list[index] = batch; else list.push(batch);
+      set(LS.notificationBatches, list);
+      queue("upsertNotificationBatch", batch);
+    },
+    async addNotificationEvent(event){
+      const list = get(LS.notificationEvents);
+      if (!list.some(item => item.id === event.id)) list.push(event);
+      set(LS.notificationEvents, list);
+      queue("addNotificationEvent", event);
+    },
     onChange(cb){
       window.addEventListener("storage", e => {
-        if ([LS.rentals, LS.cleanings, LS.comments].includes(e.key)) cb();
+        if ([LS.rentals, LS.cleanings, LS.comments, LS.notifications, LS.notificationBatches, LS.notificationEvents].includes(e.key)) cb();
       });
     },
   };
@@ -338,16 +490,26 @@ function localStore(){
 
 function makeSupabaseStore(sb){
   return {
+    kind: "supabase",
     async loadAll(){
-      const [r, c, cm] = await Promise.all([
+      const [r, c, cm, n, nb, ne] = await Promise.all([
         sb.from("rentals").select("*").order("checkin_date"),
         sb.from("cleanings").select("*").order("scheduled_date"),
         sb.from("cleaning_comments").select("*").order("created_at"),
+        sb.from("beatriz_notifications").select("*").order("checkin_date"),
+        sb.from("beatriz_notification_batches").select("*").order("opened_at", { ascending: false }),
+        sb.from("beatriz_notification_events").select("*").order("created_at", { ascending: false }).limit(1000),
       ]);
       if (r.error) throw r.error;
       if (c.error) throw c.error;
       if (cm.error) throw cm.error;
-      return { rentals: r.data || [], cleanings: c.data || [], comments: cm.data || [] };
+      if (n.error) throw n.error;
+      if (nb.error) throw nb.error;
+      if (ne.error) throw ne.error;
+      return {
+        rentals: r.data || [], cleanings: c.data || [], comments: cm.data || [],
+        notifications: n.data || [], notificationBatches: nb.data || [], notificationEvents: ne.data || [],
+      };
     },
     async upsertRental(rental){
       const { error } = await sb.from("rentals").upsert(rental);
@@ -369,14 +531,46 @@ function makeSupabaseStore(sb){
       const { error } = await sb.from("cleaning_comments").insert(cm);
       if (error) throw error;
     },
+    async upsertNotification(notification){
+      const { error } = await sb.from("beatriz_notifications").upsert(notification);
+      if (error) throw error;
+    },
+    async upsertNotificationBatch(batch){
+      const { error } = await sb.from("beatriz_notification_batches").upsert(batch);
+      if (error) throw error;
+    },
+    async addNotificationEvent(event){
+      const { error } = await sb.from("beatriz_notification_events").upsert(event, { onConflict: "id", ignoreDuplicates: true });
+      if (error) throw error;
+    },
     onChange(cb){
       const channel = sb.channel("ops-changes")
         .on("postgres_changes", { event: "*", schema: "public", table: "rentals"   }, () => cb())
         .on("postgres_changes", { event: "*", schema: "public", table: "cleanings" }, () => cb())
+        .on("postgres_changes", { event: "*", schema: "public", table: "beatriz_notifications" }, () => cb())
+        .on("postgres_changes", { event: "*", schema: "public", table: "beatriz_notification_batches" }, () => cb())
         .subscribe();
       return () => sb.removeChannel(channel);
     },
   };
+}
+
+async function flushNotificationOutbox(remoteStore){
+  let outbox = [];
+  try { outbox = JSON.parse(localStorage.getItem(LS.notificationOutbox) || "[]"); } catch {}
+  if (!outbox.length) return false;
+  const remaining = [];
+  for (const command of outbox){
+    try{
+      if (typeof remoteStore[command.method] !== "function") throw new Error("Operación local no compatible");
+      await remoteStore[command.method](command.value);
+    }catch(error){
+      console.warn("No se pudo reconciliar una operación de avisos:", categorizeError(error));
+      remaining.push(command);
+    }
+  }
+  localStorage.setItem(LS.notificationOutbox, JSON.stringify(remaining));
+  return remaining.length !== outbox.length;
 }
 
 async function initStore(){
@@ -391,7 +585,7 @@ async function initStore(){
       // Probe: hacer un loadAll antes de setear state.store. Si las tablas
       // no existen (schema no creado), caemos a localStore antes de que
       // el primer write falle con un mensaje feo.
-      const probe = await candidate.loadAll().catch(e => ({ __err: e }));
+      let probe = await candidate.loadAll().catch(e => ({ __err: e }));
       if (probe && probe.__err){
         const cat = categorizeError(probe.__err);
         console.warn("Supabase probe falló:", cat);
@@ -404,6 +598,8 @@ async function initStore(){
           state.schemaMissing = false;
         }
       } else {
+        const flushed = await flushNotificationOutbox(candidate);
+        if (flushed) probe = await candidate.loadAll();
         state.store = candidate;
         state._probeData = probe;
       }
@@ -429,9 +625,14 @@ async function initStore(){
             : "○ Modo local · solo este dispositivo"))) + "  ·  v" + VERSION;
 
   if (state._unsub) try { state._unsub(); } catch {}
-  state._unsub = state.store.onChange(() => load(true));
+  state._unsub = state.store.onChange(scheduleRemoteLoad);
 
   if (state.schemaMissing) showSchemaBanner();
+}
+
+function scheduleRemoteLoad(){
+  clearTimeout(state.remoteReloadTimer);
+  state.remoteReloadTimer = setTimeout(() => load(true), 250);
 }
 
 // Helper: categoriza un error de Supabase. Usado por load() y los call sites
@@ -463,6 +664,12 @@ async function load(isRemotePush=false){
     state.rentals   = data.rentals   || [];
     state.cleanings = data.cleanings || [];
     state.comments  = data.comments  || [];
+    state.notifications = data.notifications || [];
+    state.notificationBatches = data.notificationBatches || [];
+    state.notificationEvents = data.notificationEvents || [];
+    if (!state.pendingWhatsAppBatch){
+      state.pendingWhatsAppBatch = state.notificationBatches.find(batch => batch.status === "opened") || null;
+    }
     state.loadError = null;
     state.updatedAt = new Date().toISOString();
   }catch(err){
@@ -474,7 +681,7 @@ async function load(isRemotePush=false){
       if (state._unsub) try { state._unsub(); } catch {}
       state.store = localStore();
       state.schemaMissing = (cat.kind === "schema");
-      state._unsub = state.store.onChange(() => load(true));
+      state._unsub = state.store.onChange(scheduleRemoteLoad);
       showSchemaBanner();
       updateModeBadge();
       return load(isRemotePush);   // reintenta con local
@@ -482,9 +689,10 @@ async function load(isRemotePush=false){
     state.loadError = cat.message;
   }
   await loadCalendarReservations(!isRemotePush);
+  await reconcileCalendarNotifications();
   render();
   updateUndoBtn();
-  updateWaLastBtn();   // habilita/deshabilita el botón "📱 Último" según haya rentals
+  updateWaLastBtn();
 }
 
 async function loadCalendarReservations(force=false){
@@ -508,10 +716,75 @@ async function loadCalendarReservations(force=false){
   }
 }
 
+async function reconcileCalendarNotifications(){
+  if (state.notificationReconciling || state.calendarStatus.status !== "live") return;
+  state.notificationReconciling = true;
+  try{
+    const plan = planNotificationReconciliation(state.notifications, state.calendarReservations);
+    for (const notification of plan.upserts){
+      await state.store.upsertNotification(notification);
+      const index = state.notifications.findIndex(item => item.reservation_id === notification.reservation_id);
+      if (index >= 0) state.notifications[index] = notification;
+      else state.notifications.push(notification);
+    }
+    for (const descriptor of plan.events){
+      const event = { id: uuid(), ...descriptor, batch_id: null, created_at: new Date().toISOString() };
+      await state.store.addNotificationEvent(event);
+      state.notificationEvents.unshift(event);
+    }
+  }catch(error){
+    console.error("No se pudo reconciliar la memoria de Beatriz:", categorizeError(error));
+    state.loadError = "No se pudo actualizar la memoria compartida de avisos";
+  }finally{
+    state.notificationReconciling = false;
+  }
+}
+
+function notificationForReservation(reservationId){
+  return state.notifications.find(item => item.reservation_id === reservationId) || null;
+}
+
+function activeNotificationRentals({ includeConfirmed=false } = {}){
+  return state.calendarReservations.filter(rental => {
+    const notification = notificationForReservation(rental.reservationId);
+    if (!notification?.is_active) return false;
+    return includeConfirmed
+      ? ["pending", "opened", "confirmed", "needs_update"].includes(notification.status)
+      : isNotificationActionable(notification);
+  }).sort((left, right) =>
+    left.checkin_date.localeCompare(right.checkin_date) || left.checkout_date.localeCompare(right.checkout_date)
+  );
+}
+
+async function refreshCalendarAndNotifications({ announce=false } = {}){
+  if (state.calendarSyncing) return;
+  state.calendarSyncing = true;
+  updateCalendarBadge();
+  try{
+    await loadCalendarReservations(true);
+    await reconcileCalendarNotifications();
+    render();
+    updateWaLastBtn();
+    if (announce){
+      toast(state.calendarStatus.status === "live"
+        ? "Calendarios y avisos actualizados"
+        : "Se conserva la última copia válida", state.calendarStatus.status === "live" ? "ok" : "warn");
+    }
+  }finally{
+    state.calendarSyncing = false;
+    updateCalendarBadge();
+  }
+}
+
 function updateCalendarBadge(){
   const badge = document.getElementById("calendar-badge");
   if (!badge) return;
   const { status, fromCache } = state.calendarStatus;
+  const refresh = document.getElementById("calendar-refresh");
+  if (refresh){
+    refresh.disabled = state.calendarSyncing;
+    refresh.textContent = state.calendarSyncing ? "Actualizando…" : "↻ Actualizar";
+  }
   badge.classList.toggle("live", status === "live" && !fromCache);
   badge.classList.toggle("warn", status !== "live" || fromCache);
   if (status === "live" && !fromCache){
@@ -532,14 +805,14 @@ function updateCalendarBadge(){
 function updateModeBadge(){
   const badge = document.getElementById("mode-badge");
   if (!badge) return;
-  // Si el probe original fue exitoso y nunca demotamos, es live.
-  const isLive = !!state._probeData === false && !state._demoted && !state.schemaMissing;
-  // (Lógica simplificada: confiamos en las flags de estado.)
-  badge.classList.toggle("live", !state._demoted && !state.schemaMissing && !!state.store);
-  badge.classList.toggle("warn", state.schemaMissing);
+  const isLive = state.store?.kind === "supabase" && !state._demoted && !state.schemaMissing;
+  badge.classList.toggle("live", isLive);
+  badge.classList.toggle("warn", !isLive);
   badge.textContent = (state.schemaMissing
     ? "⚠ Faltan tablas en la nube"
-    : "● Modo live · sincronizado") + "  ·  v" + VERSION;
+    : isLive
+      ? "● Modo live · sincronizado"
+      : "⚠ Modo local · cambios en cola") + "  ·  v" + VERSION;
 }
 
 // Banner: aparece cuando detectamos que el schema no existe en Supabase.
@@ -568,6 +841,10 @@ async function retryConnection(){
 
     await initStore();
     await load();
+    clearInterval(state.calendarRefreshHandle);
+    state.calendarRefreshHandle = setInterval(() => {
+      if (document.visibilityState === "visible") refreshCalendarAndNotifications();
+    }, CONFIG.calendarRefreshMs);
 
     if (state.schemaMissing){
       showSchemaBanner();
@@ -1025,7 +1302,8 @@ function openPopover(r, anchor){
           pop.hidden = true;
           confirmCancelRental(r);
         } else if (act === "whatsapp"){
-          openWhatsApp(r);
+          if (r.readOnly) openNotificationWhatsApp([r], "individual");
+          else openWhatsApp(r);
         }
       });
     });
@@ -1046,6 +1324,118 @@ function buildWhatsAppMessage(r){
     "",
     "¿Puedes confirmarme si tienes disponibilidad para realizar la limpieza de salida? Gracias.",
   ].join("\n");
+}
+
+function buildGroupedWhatsAppMessage(rentals){
+  const lines = [
+    "Hola Beatriz, espero que estés bien. Te aviso de las próximas reservas confirmadas en el departamento de Chillán:",
+    "",
+  ];
+  rentals.forEach((rental, index) => {
+    lines.push(`${index + 1}. ${prettyShort(rental.checkin_date)} 16:00 → ${prettyShort(rental.checkout_date)} 12:00`);
+    lines.push(`   Limpieza: ${prettyShort(rental.checkout_date)} desde las 12:00`);
+  });
+  lines.push("", "¿Puedes confirmarme tu disponibilidad para estas limpiezas de salida? Gracias.");
+  return lines.join("\n");
+}
+
+function buildNotificationMessages(rentals, mode){
+  const sorted = [...rentals].sort((left, right) =>
+    left.checkin_date.localeCompare(right.checkin_date) || left.checkout_date.localeCompare(right.checkout_date)
+  );
+  if (mode === "grouped"){
+    return [{ reservationIds: sorted.map(rental => rental.reservationId), text: buildGroupedWhatsAppMessage(sorted) }];
+  }
+  return sorted.map(rental => ({ reservationIds: [rental.reservationId], text: buildWhatsAppMessage(rental) }));
+}
+
+async function persistNotificationEvent(descriptor, batchId=null){
+  const event = { id: uuid(), ...descriptor, batch_id: batchId, created_at: new Date().toISOString() };
+  await state.store.addNotificationEvent(event);
+  state.notificationEvents.unshift(event);
+}
+
+async function recordNotificationBatchOpened(rentals, mode){
+  const nowIso = new Date().toISOString();
+  const reservationIds = rentals.map(rental => rental.reservationId);
+  const batch = {
+    id: uuid(),
+    mode,
+    reservation_ids: reservationIds,
+    status: "opened",
+    opened_at: nowIso,
+    resolved_at: null,
+    created_at: nowIso,
+    updated_at: nowIso,
+  };
+  await state.store.upsertNotificationBatch(batch);
+  state.notificationBatches.unshift(batch);
+  for (const rental of rentals){
+    const previous = notificationForReservation(rental.reservationId);
+    if (!previous) continue;
+    const updated = {
+      ...previous,
+      status: "opened",
+      opened_at: nowIso,
+      confirmed_at: null,
+      last_batch_id: batch.id,
+      updated_at: nowIso,
+    };
+    await state.store.upsertNotification(updated);
+    const index = state.notifications.findIndex(item => item.reservation_id === updated.reservation_id);
+    state.notifications[index] = updated;
+    await persistNotificationEvent({
+      reservation_id: updated.reservation_id,
+      event_type: "opened",
+      previous_status: previous.status,
+      next_status: "opened",
+      checkin_date: updated.checkin_date,
+      checkout_date: updated.checkout_date,
+    }, batch.id);
+  }
+  state.pendingWhatsAppBatch = batch;
+  updateWaLastBtn();
+  if (!document.getElementById("beatriz-modal")?.hidden) renderBeatrizInbox();
+  return batch;
+}
+
+async function openNotificationWhatsApp(rentals, mode="individual"){
+  const phone = (CONFIG.beatrizWhatsApp || "").replace(/[^\d]/g, "");
+  if (!phone || !rentals.length) return;
+  const message = mode === "grouped" ? buildGroupedWhatsAppMessage(rentals) : buildWhatsAppMessage(rentals[0]);
+  const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+  const win = window.open(url, "_blank", "noopener");
+  haptic([10, 20, 10]);
+
+  const rememberOpened = async () => {
+    try{
+      await recordNotificationBatchOpened(rentals, mode);
+      toast("WhatsApp abierto · al volver confirma si lo enviaste", "ok", 6000);
+    }catch(error){
+      console.error("No se pudo guardar la apertura de WhatsApp:", error);
+      toast("WhatsApp se abrió, pero no se pudo guardar el estado", "warn", 7000);
+    }
+  };
+
+  if (!win || win.closed){
+    toast("⚠ Toca el enlace para abrir WhatsApp", "warn", 15000);
+    setTimeout(() => {
+      const toastEl = document.getElementById("toast");
+      if (!toastEl) return;
+      const link = document.createElement("a");
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.className = "toast-link";
+      link.textContent = "👉 Abrir WhatsApp";
+      link.addEventListener("click", rememberOpened, { once: true });
+      toastEl.innerHTML = '<span class="toast-msg">La ventana emergente fue bloqueada.</span>';
+      toastEl.appendChild(link);
+      toastEl.classList.add("has-actions");
+    }, 100);
+    return;
+  }
+  await rememberOpened();
 }
 
 function openWhatsApp(rental){
@@ -1127,13 +1517,173 @@ function nextReservationForWhatsApp(){
 function updateWaLastBtn(){
   const btn = document.getElementById("wa-last");
   if (!btn) return;
-  const next = nextReservationForWhatsApp();
-  if (next){
-    btn.disabled = false;
-    btn.title = `Preparar mensaje para Beatriz: ${prettyShort(next.checkin_date)} → ${prettyShort(next.checkout_date)} (16:00 → 12:00)`;
+  const pending = activeNotificationRentals().length;
+  const opened = state.notifications.filter(item => item.is_active && item.status === "opened").length;
+  btn.disabled = pending + opened === 0;
+  btn.textContent = pending ? `📱 Beatriz · ${pending}` : opened ? `📱 Confirmar · ${opened}` : "📱 Beatriz";
+  btn.title = pending
+    ? `${pending} reserva${pending === 1 ? "" : "s"} pendiente${pending === 1 ? "" : "s"} de aviso`
+    : opened ? "Hay mensajes abiertos por confirmar" : "No hay avisos pendientes";
+}
+
+function planBatchResolution(notifications, batch, sent, nowIso = new Date().toISOString()){
+  const updates = [];
+  const events = [];
+  for (const previous of notifications || []){
+    if (previous.last_batch_id !== batch.id) continue;
+    const nextStatus = previous.status === "needs_update"
+      ? "needs_update"
+      : sent ? "confirmed" : "pending";
+    const updated = {
+      ...previous,
+      status: nextStatus,
+      confirmed_at: sent && nextStatus === "confirmed" ? nowIso : null,
+      updated_at: nowIso,
+    };
+    updates.push(updated);
+    events.push({
+      reservation_id: previous.reservation_id,
+      event_type: sent ? "confirmed" : "kept_pending",
+      previous_status: previous.status,
+      next_status: nextStatus,
+      checkin_date: previous.checkin_date,
+      checkout_date: previous.checkout_date,
+    });
+  }
+  return {
+    batch: { ...batch, status: sent ? "confirmed" : "not_confirmed", resolved_at: nowIso, updated_at: nowIso },
+    updates,
+    events,
+  };
+}
+
+async function resolveNotificationBatch(batch, sent){
+  if (!batch) return;
+  const plan = planBatchResolution(state.notifications, batch, sent);
+  await state.store.upsertNotificationBatch(plan.batch);
+  const batchIndex = state.notificationBatches.findIndex(item => item.id === batch.id);
+  if (batchIndex >= 0) state.notificationBatches[batchIndex] = plan.batch;
+  for (const updated of plan.updates){
+    await state.store.upsertNotification(updated);
+    const index = state.notifications.findIndex(item => item.reservation_id === updated.reservation_id);
+    state.notifications[index] = updated;
+  }
+  for (const event of plan.events) await persistNotificationEvent(event, batch.id);
+  if (state.pendingWhatsAppBatch?.id === batch.id) state.pendingWhatsAppBatch = null;
+  closeWhatsAppConfirmation();
+  renderBeatrizInbox();
+  updateWaLastBtn();
+  toast(sent ? "Envío confirmado y guardado" : "El aviso sigue pendiente", sent ? "ok" : "warn");
+}
+
+async function correctNotificationConfirmation(reservationId){
+  const previous = notificationForReservation(reservationId);
+  if (!previous || previous.status !== "confirmed") return;
+  const nowIso = new Date().toISOString();
+  const updated = { ...previous, status: "pending", confirmed_at: null, last_batch_id: null, updated_at: nowIso };
+  await state.store.upsertNotification(updated);
+  state.notifications[state.notifications.findIndex(item => item.reservation_id === reservationId)] = updated;
+  await persistNotificationEvent({
+    reservation_id: reservationId,
+    event_type: "confirmation_corrected",
+    previous_status: "confirmed",
+    next_status: "pending",
+    checkin_date: updated.checkin_date,
+    checkout_date: updated.checkout_date,
+  });
+  renderBeatrizInbox();
+  updateWaLastBtn();
+}
+
+function showWhatsAppConfirmation(batch){
+  if (!batch) return;
+  const modal = document.getElementById("whatsapp-confirm-modal");
+  const rentals = batch.reservation_ids
+    .map(id => state.calendarReservations.find(rental => rental.reservationId === id))
+    .filter(Boolean);
+  document.getElementById("whatsapp-confirm-summary").innerHTML = rentals.length
+    ? rentals.map(rental => `<li>${escapeHtml(prettyShort(rental.checkin_date))} → ${escapeHtml(prettyShort(rental.checkout_date))}</li>`).join("")
+    : "<li>Reserva sincronizada</li>";
+  modal.dataset.batchId = batch.id;
+  modal.hidden = false;
+}
+
+function closeWhatsAppConfirmation(){
+  const modal = document.getElementById("whatsapp-confirm-modal");
+  if (!modal) return;
+  modal.hidden = true;
+  delete modal.dataset.batchId;
+}
+
+function maybeShowWhatsAppConfirmation(){
+  const batch = state.pendingWhatsAppBatch;
+  if (!batch || batch.status !== "opened") return;
+  if (Date.now() - new Date(batch.opened_at).getTime() < 700) return;
+  showWhatsAppConfirmation(batch);
+}
+
+function openBeatrizInbox(){
+  state.inboxSelection = new Set(activeNotificationRentals().map(rental => rental.reservationId));
+  state.separateQueue = [];
+  document.getElementById("beatriz-modal").hidden = false;
+  renderBeatrizInbox();
+}
+
+function closeBeatrizInbox(){
+  document.getElementById("beatriz-modal").hidden = true;
+  state.separateQueue = [];
+}
+
+function renderBeatrizInbox(){
+  const modal = document.getElementById("beatriz-modal");
+  if (!modal || modal.hidden) return;
+  const list = document.getElementById("beatriz-list");
+  const includeConfirmed = !!document.getElementById("beatriz-include-confirmed")?.checked;
+  const rentals = state.calendarReservations
+    .map(rental => ({ rental, notification: notificationForReservation(rental.reservationId) }))
+    .filter(item => item.notification?.is_active)
+    .sort((left, right) => left.rental.checkin_date.localeCompare(right.rental.checkin_date));
+  const actionableCount = rentals.filter(item => isNotificationActionable(item.notification)).length;
+  const openedCount = rentals.filter(item => item.notification.status === "opened").length;
+  document.getElementById("beatriz-summary").textContent = actionableCount
+    ? `${actionableCount} reserva${actionableCount === 1 ? "" : "s"} pendiente${actionableCount === 1 ? "" : "s"} de aviso.`
+    : openedCount ? `${openedCount} mensaje${openedCount === 1 ? "" : "s"} por confirmar.` : "No hay avisos pendientes.";
+
+  list.innerHTML = rentals.length ? rentals.map(({ rental, notification }) => {
+    const selectable = isNotificationActionable(notification) || (includeConfirmed && notification.status === "confirmed");
+    const checked = state.inboxSelection.has(rental.reservationId);
+    return `
+      <article class="beatriz-row status-${escapeHtml(notification.status)}">
+        <label class="beatriz-select">
+          ${selectable ? `<input type="checkbox" data-reservation-id="${escapeHtml(rental.reservationId)}" ${checked ? "checked" : ""}>` : '<span class="selection-placeholder"></span>'}
+          <span>
+            <strong>${escapeHtml(prettyShort(rental.checkin_date))} 16:00 → ${escapeHtml(prettyShort(rental.checkout_date))} 12:00</strong>
+            <small>Limpieza desde las 12:00</small>
+          </span>
+        </label>
+        <div class="beatriz-row-state">
+          <span class="notification-status">${escapeHtml(NOTIFICATION_LABELS[notification.status] || notification.status)}</span>
+          ${notification.status === "opened" ? `<button class="pbtn" data-act="confirm-opened" data-batch-id="${escapeHtml(notification.last_batch_id || "")}">Confirmar envío</button>` : ""}
+          ${notification.status === "confirmed" ? `<button class="pbtn ghost" data-act="correct" data-reservation-id="${escapeHtml(rental.reservationId)}">Corregir</button>` : ""}
+        </div>
+      </article>`;
+  }).join("") : '<p class="empty-row">Aún no hay reservas sincronizadas para coordinar.</p>';
+
+  const selected = [...state.inboxSelection].filter(id => rentals.some(item => item.rental.reservationId === id));
+  const prepare = document.getElementById("beatriz-prepare");
+  prepare.disabled = selected.length === 0;
+  prepare.textContent = selected.length ? `Preparar ${selected.length} aviso${selected.length === 1 ? "" : "s"}` : "Selecciona reservas";
+
+  const queue = document.getElementById("beatriz-separate-queue");
+  if (state.separateQueue.length){
+    queue.hidden = false;
+    queue.innerHTML = `<strong>Mensajes separados</strong>${state.separateQueue.map(id => {
+      const rental = state.calendarReservations.find(item => item.reservationId === id);
+      return rental ? `<button class="btn wa-btn" data-act="open-separate" data-reservation-id="${escapeHtml(id)}">📱 Abrir ${escapeHtml(prettyShort(rental.checkin_date))} → ${escapeHtml(prettyShort(rental.checkout_date))}</button>` : "";
+    }).join("")}`;
   } else {
-    btn.disabled = true;
-    btn.title = "No hay reservas para coordinar todavía.";
+    queue.hidden = true;
+    queue.innerHTML = "";
   }
 }
 
@@ -1188,7 +1738,8 @@ function openRentalsList(){
         modal.hidden = true;
         openRentalForm(r);
       } else if (act === "whatsapp"){
-        openWhatsApp(r);
+        if (r.readOnly) openNotificationWhatsApp([r], "individual");
+        else openWhatsApp(r);
       } else if (act === "cancel"){
         if (r.readOnly) return;
         modal.hidden = true;
@@ -1821,11 +2372,56 @@ function bind(){
     confirmBrush(true);
   });
 
-  // WhatsApp de la próxima reserva que requiere coordinación (admin only)
-  document.getElementById("wa-last").addEventListener("click", () => {
-    if (!state.admin) return;
-    const r = nextReservationForWhatsApp();
-    if (r) openWhatsApp(r);
+  // Bandeja de coordinación: disponible para el operador sin elevar a admin.
+  document.getElementById("wa-last").addEventListener("click", openBeatrizInbox);
+  document.getElementById("calendar-refresh").addEventListener("click", () => refreshCalendarAndNotifications({ announce: true }));
+  document.getElementById("beatriz-close").addEventListener("click", closeBeatrizInbox);
+  document.getElementById("beatriz-modal").addEventListener("click", async event => {
+    if (event.target.id === "beatriz-modal") return closeBeatrizInbox();
+    const action = event.target.closest("[data-act]");
+    if (!action) return;
+    if (action.dataset.act === "open-separate"){
+      const rental = state.calendarReservations.find(item => item.reservationId === action.dataset.reservationId);
+      if (!rental) return;
+      await openNotificationWhatsApp([rental], "individual");
+      state.separateQueue = state.separateQueue.filter(id => id !== rental.reservationId);
+      renderBeatrizInbox();
+    } else if (action.dataset.act === "confirm-opened"){
+      const batch = state.notificationBatches.find(item => item.id === action.dataset.batchId);
+      showWhatsAppConfirmation(batch);
+    } else if (action.dataset.act === "correct"){
+      const ok = await askConfirm({ title: "Corregir confirmación", tip: "La reserva volverá a quedar pendiente de aviso." });
+      if (ok) await correctNotificationConfirmation(action.dataset.reservationId);
+    }
+  });
+  document.getElementById("beatriz-modal").addEventListener("change", event => {
+    if (event.target.id === "beatriz-include-confirmed") return renderBeatrizInbox();
+    if (event.target.matches('input[type="checkbox"][data-reservation-id]')){
+      if (event.target.checked) state.inboxSelection.add(event.target.dataset.reservationId);
+      else state.inboxSelection.delete(event.target.dataset.reservationId);
+      renderBeatrizInbox();
+    }
+  });
+  document.getElementById("beatriz-prepare").addEventListener("click", async () => {
+    const rentals = [...state.inboxSelection]
+      .map(id => state.calendarReservations.find(item => item.reservationId === id))
+      .filter(Boolean);
+    const mode = document.querySelector('input[name="beatriz-mode"]:checked')?.value || "grouped";
+    if (!rentals.length) return;
+    if (mode === "individual"){
+      state.separateQueue = rentals.map(rental => rental.reservationId);
+      renderBeatrizInbox();
+      return;
+    }
+    await openNotificationWhatsApp(rentals, "grouped");
+  });
+  document.getElementById("whatsapp-sent").addEventListener("click", async () => {
+    const id = document.getElementById("whatsapp-confirm-modal").dataset.batchId;
+    await resolveNotificationBatch(state.notificationBatches.find(item => item.id === id), true);
+  });
+  document.getElementById("whatsapp-not-sent").addEventListener("click", async () => {
+    const id = document.getElementById("whatsapp-confirm-modal").dataset.batchId;
+    await resolveNotificationBatch(state.notificationBatches.find(item => item.id === id), false);
   });
 
   // Lista de arriendos (admin only)
@@ -1833,6 +2429,14 @@ function bind(){
   document.getElementById("list-close").addEventListener("click", closeRentalsList);
   document.getElementById("list-modal").addEventListener("click", e => {
     if (e.target.id === "list-modal") closeRentalsList();
+  });
+
+  window.addEventListener("focus", maybeShowWhatsAppConfirmation);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible"){
+      refreshCalendarAndNotifications();
+      maybeShowWhatsAppConfirmation();
+    }
   });
 
   // Banner de schema faltante
@@ -1879,7 +2483,9 @@ function bind(){
   // Escape
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
-    if (!document.getElementById("list-modal").hidden) closeRentalsList();
+    if (!document.getElementById("whatsapp-confirm-modal").hidden) closeWhatsAppConfirmation();
+    else if (!document.getElementById("beatriz-modal").hidden) closeBeatrizInbox();
+    else if (!document.getElementById("list-modal").hidden) closeRentalsList();
     else if (!document.getElementById("admin-login-modal").hidden) closeAdminLogin();
     else if (!document.getElementById("cleaning-ready-modal").hidden) closeCleaningReadyModal(false);
     else if (!document.getElementById("confirm-modal").hidden) closeConfirmModal(false);
@@ -1926,9 +2532,13 @@ if (typeof document !== "undefined") main();
 // Superficie mínima para las pruebas Node; no existe en el navegador.
 if (typeof module !== "undefined" && module.exports){
   module.exports = {
+    buildGroupedWhatsAppMessage,
+    buildNotificationMessages,
     buildWhatsAppMessage,
     calendarRangesToRentals,
     isValidIsoDate,
     normalizeAvailabilityPayload,
+    planBatchResolution,
+    planNotificationReconciliation,
   };
 }

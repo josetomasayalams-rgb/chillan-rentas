@@ -14,6 +14,8 @@ Adaptadores: localStorage | cliente Supabase
 Persistencia: schema.sql
 
 Fuente pública: /availability → state.calendarSource → read model de solo lectura
+                                                       ↓
+                                   reconciliación → state.store → avisos
 ```
 
 ## Reglas
@@ -29,8 +31,10 @@ Fuente pública: /availability → state.calendarSource → read model de solo l
 
 Las preferencias locales del dispositivo —por ejemplo, si el bloqueo está activo— pueden usar `localStorage` mediante helpers dedicados. Esa excepción no autoriza a la UI a leer o escribir arriendos, limpiezas o comentarios fuera de `state.store`.
 
-`makeCalendarSource()` es el único punto que consulta calendarios. Recibe solo
-rangos de fechas sanitizados y nunca inserta esas entradas en `rentals`.
+`makeCalendarSource()` es el único punto que consulta calendarios. Recibe
+rangos de fechas sanitizados con identidad HMAC opaca y nunca inserta esas
+entradas en `rentals`. La reconciliación escribe únicamente el estado operativo
+del aviso a Beatriz mediante `state.store`.
 
 El test de arquitectura permite a `app.js` importar exclusivamente `https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm`. No hay violaciones base y `tests/architecture/known-violations.json` no debe crecer. `scripts/lint.mjs` también rechaza operaciones `sb.from()` fuera de `makeSupabaseStore()`.
 
