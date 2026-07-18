@@ -29,6 +29,16 @@ Operaciones. Pasan por `state.calendarSource`, se conservan como última copia
 válida y nunca se insertan en `rentals` ni generan escrituras sobre el
 calendario familiar.
 
+La identidad HMAC de cada rango sí se usa como clave de
+`beatriz_notifications`. Esta tabla, sus lotes y su historial pertenecen a
+Operaciones: registran coordinación de limpieza, nunca modifican ni reexportan
+la reserva de origen. “WhatsApp abierto” y “Envío confirmado” son estados
+distintos.
+
+Si el backend falla, el adaptador local encola escrituras de avisos con IDs
+idempotentes. `initStore()` las reproduce en orden al recuperar Supabase y solo
+entonces limpia la cola local.
+
 ## Paridad del contrato
 
 Si agregas una operación al puerto:

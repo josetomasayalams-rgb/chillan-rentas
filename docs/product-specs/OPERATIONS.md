@@ -17,6 +17,14 @@ La familia puede consultar arriendos, coordinar la limpieza de salida y dejar co
 - Al crear o editar un arriendo, la limpieza corresponde al checkout.
 - Cada reserva permite preparar un mensaje para Beatriz con llegada, salida y
   solicitud de disponibilidad para la limpieza; WhatsApp requiere confirmación humana.
+- La bandeja selecciona una o varias reservas pendientes y permite preparar un
+  mensaje agrupado o mensajes separados.
+- La plataforma distingue “Pendiente”, “WhatsApp abierto”, “Envío confirmado”
+  y “Requiere nuevo aviso por cambio”; abrir WhatsApp nunca confirma el envío.
+- La confirmación se comparte por Supabase, conserva historial y puede
+  corregirse o reenviarse explícitamente.
+- Los calendarios se actualizan al entrar, al volver a la aplicación, cada cinco
+  minutos mientras está visible y mediante el botón “Actualizar”.
 - El modo local conserva la operación en el dispositivo y avisa que no está sincronizado.
 - El modo remoto comparte cambios mediante Supabase realtime.
 - La interfaz requiere confirmación antes de acciones sensibles.

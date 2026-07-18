@@ -18,7 +18,7 @@
 
   <link rel="preload" as="image" href="assets/chillan-bg-mobile.jpg" fetchpriority="high" media="(max-width:900px)">
 
-  <link rel="stylesheet" href="styles.css?v=27">
+  <link rel="stylesheet" href="styles.css?v=28">
 </head>
 <body class="locked">
   <div class="bg-layer" aria-hidden="true"></div>
@@ -52,7 +52,7 @@
         <button id="next" class="btn glass icon" aria-label="Mes siguiente">›</button>
         <button id="today" class="btn glass">Hoy</button>
         <button id="add" class="btn glass primary admin-only" title="Crear nuevo arriendo">+ Arriendo</button>
-        <button id="wa-last" class="btn glass wa-btn admin-only" disabled title="Preparar mensaje para Beatriz sobre la próxima reserva">📱 Próxima</button>
+        <button id="wa-last" class="btn glass wa-btn" disabled title="Abrir bandeja de avisos para Beatriz">📱 Beatriz</button>
         <button id="list" class="btn glass admin-only" title="Ver reservas sincronizadas y arriendos operativos">📋 Reservas</button>
         <button id="undo" class="btn glass" disabled title="No hay nada que deshacer">↩ Deshacer</button>
       </nav>
@@ -82,6 +82,7 @@
     <footer class="foot">
       <span id="mode-badge" class="mode-badge"></span>
       <span id="calendar-badge" class="mode-badge calendar-badge">○ Cargando calendarios…</span>
+      <button id="calendar-refresh" class="btn glass sync-btn" type="button">↻ Actualizar</button>
       <button id="lock-toggle" class="btn glass lock-btn admin-only" title="Lock al iniciar (solo admin)">🔒 Con clave</button>
       <button id="admin" class="btn glass admin-btn" title="Entrar al modo administrador">🔒 Entrar como admin</button>
     </footer>
@@ -218,7 +219,43 @@
     </div>
   </div>
 
+  <!-- Bandeja operativa de avisos de limpieza; disponible sin modo admin. -->
+  <div class="modal-overlay" id="beatriz-modal" hidden>
+    <div class="modal glass modal-wide beatriz-modal" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="beatriz-title">
+      <h2 id="beatriz-title">📱 Avisos para Beatriz</h2>
+      <p class="modal-tip" id="beatriz-summary">Cargando avisos…</p>
+      <label class="include-confirmed">
+        <input type="checkbox" id="beatriz-include-confirmed">
+        Incluir reservas ya avisadas para reenviar
+      </label>
+      <div class="beatriz-list" id="beatriz-list"></div>
+      <fieldset class="message-mode">
+        <legend>Cómo preparar los mensajes seleccionados</legend>
+        <label><input type="radio" name="beatriz-mode" value="grouped" checked> Un solo mensaje agrupado</label>
+        <label><input type="radio" name="beatriz-mode" value="individual"> Mensajes separados</label>
+      </fieldset>
+      <div class="beatriz-separate-queue" id="beatriz-separate-queue" hidden></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="beatriz-close" type="button">Cerrar</button>
+        <button class="btn wa-btn" id="beatriz-prepare" type="button" disabled>Selecciona reservas</button>
+      </div>
+    </div>
+  </div>
 
-  <script src="app.js?v=27" defer></script>
+  <!-- Confirmación explícita: abrir WhatsApp nunca cuenta como envío. -->
+  <div class="modal-overlay" id="whatsapp-confirm-modal" hidden>
+    <div class="modal glass" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="whatsapp-confirm-title">
+      <h2 id="whatsapp-confirm-title">¿El mensaje fue enviado?</h2>
+      <p class="modal-tip">Abrir WhatsApp no confirma la entrega. Indica qué ocurrió para mantener la memoria correcta.</p>
+      <ul class="whatsapp-confirm-summary" id="whatsapp-confirm-summary"></ul>
+      <div class="modal-actions">
+        <button class="btn ghost" id="whatsapp-not-sent" type="button">Mantener pendiente</button>
+        <button class="btn primary" id="whatsapp-sent" type="button">Sí, fue enviado</button>
+      </div>
+    </div>
+  </div>
+
+
+  <script src="app.js?v=28" defer></script>
 </body>
 </html>

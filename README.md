@@ -20,7 +20,7 @@ PIN admin: `2407` (cambiar en `app.js` → `CONFIG.adminPin`).
 
 1. **Crear proyecto Supabase** → [supabase.com](https://supabase.com).
 2. **SQL Editor** → New query → pegar el contenido de `schema.sql` → Run.
-   Crea las tablas `rentals`, `cleanings`, `cleaning_comments` + RLS + realtime.
+   Crea las tablas de arriendos, limpiezas y memoria de avisos a Beatriz + RLS + realtime.
 3. **Project Settings → API** → copiar **Project URL** y **anon public key**.
 4. Pegar en `app.js` arriba (líneas ~13-14, `supabaseUrl` y `supabaseAnonKey`).
 5. **Cambiar los PINes** en `app.js`:
@@ -35,8 +35,10 @@ PIN admin: `2407` (cambiar en `app.js` → `CONFIG.adminPin`).
 - **Calendarios vinculados**: el contrato público de Reservas familiares aporta
   Airbnb, Booking y familia. Aquí todos aparecen únicamente como **Reservado**,
   son de solo lectura y nunca muestran proveedor ni datos del huésped.
-- **WhatsApp para Beatriz**: cada reserva prepara un texto con llegada, salida y
-  limpieza de checkout. La persona administradora revisa y confirma el envío en WhatsApp.
+- **WhatsApp para Beatriz**: la bandeja operativa selecciona una o varias
+  reservas y prepara mensajes separados o agrupados. Abrir WhatsApp se registra
+  aparte; al volver, la persona confirma si realmente lo envió. El historial se
+  comparte por Supabase y permite corregir o reenviar.
 
 ## Archivos
 
@@ -53,6 +55,9 @@ PIN admin: `2407` (cambiar en `app.js` → `CONFIG.adminPin`).
 - **Una** `rental` por período de arriendo. Estados: `scheduled | in_progress | completed | cancelled`.
 - **Una** `cleaning` (tarea) por `rental`, generada automáticamente al `checkout_date` a las 12:00. Estados: `pending | confirmed | done | cancelled`.
 - `cleaning_comments` opcional — para que el operador deje notas (ej: "dejé las llaves en la cocina").
+- `beatriz_notifications`, `beatriz_notification_batches` y
+  `beatriz_notification_events` guardan estado e historial usando solo la
+  identidad opaca y las fechas sanitizadas de cada reserva.
 - RLS abierto por diseño (la defensa es la URL staying dentro del círculo familiar). Si querés cerrar, agregá Supabase Auth + passcode compartido.
 
 ## Cache busting
