@@ -16,7 +16,7 @@ duración, que cada reserva sincronizada tenga un botón de aseo en checkout y q
 estadía finalizada permanezca visible hasta confirmar la limpieza.
 
 Confirma que la grilla exponga exactamente 30 fechas consecutivas desde hoy,
-incluya una franja con nombre y cantidad de días por mes, resalte el día 1,
+resalte únicamente el día 1 en dorado, sin franjas ni tintes de fondo por mes,
 muestre el rango correcto y no inserte huecos. Las flechas deben mover 30 días;
 `Desde hoy` debe restaurar el rango vigente y el seguimiento diario.
 

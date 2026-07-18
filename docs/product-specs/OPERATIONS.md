@@ -12,7 +12,7 @@ La familia puede consultar arriendos, coordinar la limpieza de salida y dejar co
 ## Reglas observables
 
 - El calendario muestra 30 días consecutivos desde hoy, aunque cruce al mes
-  siguiente, separa los meses con una franja proporcional y resalta el día 1.
+  siguiente, y marca únicamente el día 1 en dorado, sin franjas ni tintes por mes.
 - Las flechas recorren periodos completos de 30 días; “Desde hoy” vuelve al
   rango vigente y reactiva su seguimiento diario.
 - Toda estadía aparece como un único tipo “Reserva”; las consecutivas alternan
