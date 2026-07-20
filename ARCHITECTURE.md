@@ -25,7 +25,7 @@ visible, no la persistencia.
 ## Flujo
 
 ```text
-Usuario → presentación estática → app.js → state.store
+Usuario → Google Auth → presentación estática → app.js → state.store
                                           ├─ localStorage
                                           └─ Supabase (datos y realtime)
 `/availability` → state.calendarSource → reservas de Airbnb, Booking y particulares de solo lectura
@@ -51,3 +51,7 @@ estado independientes, por lo que confirmar a Beatriz no confirma a Rodrigo.
 - El cliente Supabase se carga de forma remota y condicional; si falla, la aplicación degrada a modo local.
 
 Las reservas sincronizadas usan `reservation_id` opaco y un índice único para mantener exactamente una limpieza automática. Las reservas manuales conservan su relación por `rental_id`.
+
+Con Supabase configurado, `initStore()` exige una sesión incluida en
+`calendar_admins`; una identidad ausente o vencida falla cerrada y nunca degrada
+a escrituras locales divergentes. RLS repite la autorización en el servidor.

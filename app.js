@@ -50,7 +50,11 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "33";
+const VERSION = "34";
+const AUTHORIZED_EMAILS = new Set([
+  "josetomasayalams@gmail.com",
+  "scamussotomayor@gmail.com",
+]);
 const MON_SHORT = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
 const LS = {
@@ -674,13 +678,70 @@ function localStore(){
   };
 }
 
+function unavailableStore(reason){
+  const fail = async () => { throw new Error(reason); };
+  return {
+    kind:"unavailable",
+    async loadAll(){ return {
+      rentals:[], cleanings:[], comments:[], notifications:[], notificationBatches:[], notificationEvents:[],
+      rodrigoNotifications:[], rodrigoNotificationBatches:[], rodrigoNotificationEvents:[],
+    }; },
+    upsertRental:fail,
+    removeRental:fail,
+    upsertCleaning:fail,
+    removeCleaning:fail,
+    addComment:fail,
+    upsertNotification:fail,
+    upsertNotificationBatch:fail,
+    addNotificationEvent:fail,
+    onChange(){ return () => {}; },
+  };
+}
+
+function showAuthGate(sb, message, denied=false){
+  const gate = document.getElementById("auth-gate");
+  const detail = document.getElementById("auth-detail");
+  const button = document.getElementById("auth-google");
+  if (!gate || !detail || !button) return;
+  detail.textContent = message;
+  gate.hidden = false;
+  gate.classList.toggle("denied", denied);
+  button.textContent = denied ? "Ingresar con otra cuenta" : "Ingresar con Google";
+  button.onclick = async () => {
+    await sb.auth.signOut({ scope:"local" });
+    const { error } = await sb.auth.signInWithOAuth({
+      provider:"google",
+      options:{ redirectTo:`${location.origin}${location.pathname}` },
+    });
+    if (error) detail.textContent = `No se pudo iniciar sesión: ${error.message}`;
+  };
+}
+
+async function requireAuthorizedSession(sb){
+  const { data, error } = await sb.auth.getSession();
+  if (error) throw error;
+  const email = data.session?.user?.email?.trim().toLowerCase() || "";
+  if (!email){
+    showAuthGate(sb, "Inicia sesión con una de las dos cuentas administradoras.");
+    return false;
+  }
+  if (!AUTHORIZED_EMAILS.has(email)){
+    await sb.auth.signOut({ scope:"local" });
+    showAuthGate(sb, "Esta cuenta no tiene permiso para modificar la operación.", true);
+    return false;
+  }
+  const gate = document.getElementById("auth-gate");
+  if (gate) gate.hidden = true;
+  return true;
+}
+
 function makeSupabaseStore(sb){
   return {
     kind: "supabase",
     async loadAll(){
       const [r, c, cm, n, nb, ne, rn, rnb, rne] = await Promise.all([
-        sb.from("rentals").select("*").order("checkin_date"),
-        sb.from("cleanings").select("*").order("scheduled_date"),
+        sb.from("rentals").select("*").is("deleted_at", null).order("checkin_date"),
+        sb.from("cleanings").select("*").is("deleted_at", null).order("scheduled_date"),
         sb.from("cleaning_comments").select("*").order("created_at"),
         sb.from("beatriz_notifications").select("*").order("checkin_date"),
         sb.from("beatriz_notification_batches").select("*").order("opened_at", { ascending: false }),
@@ -705,19 +766,19 @@ function makeSupabaseStore(sb){
       };
     },
     async upsertRental(rental){
-      const { error } = await sb.from("rentals").upsert(rental);
+      const { error } = await sb.from("rentals").upsert({ ...rental, deleted_at:null });
       if (error) throw error;
     },
     async removeRental(id){
-      const { error } = await sb.from("rentals").delete().eq("id", id);
+      const { error } = await sb.from("rentals").update({ deleted_at:new Date().toISOString() }).eq("id", id);
       if (error) throw error;
     },
     async upsertCleaning(cleaning){
-      const { error } = await sb.from("cleanings").upsert(cleaning);
+      const { error } = await sb.from("cleanings").upsert({ ...cleaning, deleted_at:null });
       if (error) throw error;
     },
     async removeCleaning(id){
-      const { error } = await sb.from("cleanings").delete().eq("id", id);
+      const { error } = await sb.from("cleanings").update({ deleted_at:new Date().toISOString() }).eq("id", id);
       if (error) throw error;
     },
     async addComment(cm){
@@ -775,6 +836,10 @@ async function initStore(){
     try{
       const { createClient } = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
       const sb = createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey);
+      if (!await requireAuthorizedSession(sb)){
+        state.store = unavailableStore("Autenticación requerida");
+        configuredButFailed = true;
+      } else {
       const candidate = makeSupabaseStore(sb);
 
       // Probe: hacer un loadAll antes de setear state.store. Si las tablas
@@ -785,7 +850,7 @@ async function initStore(){
         const cat = categorizeError(probe.__err);
         console.warn("Supabase probe falló:", cat);
         if (cat.kind === "schema" || cat.kind === "network"){
-          state.store = localStore();
+          state.store = unavailableStore(cat.kind === "schema" ? "Falta aplicar el esquema seguro" : "No se pudo conectar al calendario compartido");
           state.schemaMissing = (cat.kind === "schema");
           configuredButFailed = true;
         } else {
@@ -798,13 +863,14 @@ async function initStore(){
         state.store = candidate;
         state._probeData = probe;
       }
+      }
     }catch(err){
-      console.error("Supabase init falló, usando modo local:", err);
-      state.store = localStore();
+      console.error("Supabase init falló:", err);
+      state.store = unavailableStore("No se pudo conectar al calendario compartido");
       configuredButFailed = true;
     }
   }
-  if (!state.store) state.store = localStore();
+  if (!state.store) state.store = CONFIG.supabaseUrl ? unavailableStore("Autenticación requerida") : localStore();
 
   // Badge: "live" solo si el probe trajo datos sin error. "schema" y "network"
   // son fallback a local (el badge muestra warning + v).
@@ -876,17 +942,8 @@ async function load(isRemotePush=false){
   }catch(err){
     const cat = categorizeError(err);
     console.error("load() falló:", cat);
-    if ((cat.kind === "schema" || cat.kind === "network") && !state._demoted){
-      // Auto-fallback: swap a localStore y reintentar.
-      state._demoted = true;
-      if (state._unsub) try { state._unsub(); } catch {}
-      state.store = localStore();
-      state.schemaMissing = (cat.kind === "schema");
-      state._unsub = state.store.onChange(scheduleRemoteLoad);
-      showSchemaBanner();
-      updateModeBadge();
-      return load(isRemotePush);   // reintenta con local
-    }
+    // Con Supabase configurado se falla cerrado; nunca se crean datos locales
+    // divergentes por una caída de red o un cambio de esquema.
     state.loadError = cat.message;
   }
   await loadCalendarReservations(!isRemotePush);
