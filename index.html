@@ -18,10 +18,20 @@
 
   <link rel="preload" as="image" href="assets/chillan-bg-mobile.jpg" fetchpriority="high" media="(max-width:900px)">
 
-  <link rel="stylesheet" href="styles.css?v=33">
+  <link rel="stylesheet" href="styles.css?v=34">
 </head>
 <body class="locked">
   <div class="bg-layer" aria-hidden="true"></div>
+
+  <div id="auth-gate" class="auth-gate" role="dialog" aria-modal="true" aria-labelledby="auth-title" hidden>
+    <div class="auth-card glass">
+      <div class="auth-mark" aria-hidden="true">CS</div>
+      <h2 id="auth-title">Acceso protegido</h2>
+      <p id="auth-detail">Comprobando tu sesión…</p>
+      <button id="auth-google" class="btn primary" type="button">Ingresar con Google</button>
+      <small>Solo José y Sofía pueden modificar la operación.</small>
+    </div>
+  </div>
 
   <!-- Lock screen (mismo PIN para todos) -->
   <div id="lock" class="lock-overlay" role="dialog" aria-modal="true" aria-labelledby="lock-title">
@@ -255,6 +265,6 @@
   </div>
 
 
-  <script src="app.js?v=33" defer></script>
+  <script src="app.js?v=34" defer></script>
 </body>
 </html>

@@ -894,3 +894,18 @@ body.locked .app{
   .btn{ font-size:13px; }
   .cell{ min-height:70px; }
 }
+/* Supabase Auth is the backend authorization boundary; the PIN remains a local UX lock. */
+.auth-gate{
+  position:fixed; inset:0; z-index:10000; display:grid; place-items:center;
+  padding:24px; background:rgba(5,12,20,.82); backdrop-filter:blur(14px);
+}
+.auth-gate[hidden]{ display:none; }
+.auth-card{ width:min(100%,420px); padding:32px; text-align:center; border-radius:24px; }
+.auth-card h2{ margin:14px 0 8px; }
+.auth-card p{ margin:0 0 20px; color:var(--muted); }
+.auth-card small{ display:block; margin-top:14px; color:var(--muted); }
+.auth-mark{
+  width:58px; height:58px; margin:auto; display:grid; place-items:center;
+  border-radius:18px; background:#153b33; color:#f5f7f2; font-weight:800; letter-spacing:.08em;
+}
+.auth-gate.denied .auth-mark{ background:#8b2f36; }

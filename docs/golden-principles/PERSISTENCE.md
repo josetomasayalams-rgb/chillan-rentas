@@ -36,9 +36,10 @@ de limpieza y Rodrigo coordinación de conserjería. Ninguna memoria modifica ni
 reexporta la reserva de origen. “WhatsApp abierto” y “Envío confirmado” son
 estados distintos y confirmar un destinatario nunca confirma al otro.
 
-Si el backend falla, el adaptador local encola escrituras de avisos con IDs
-idempotentes. `initStore()` las reproduce en orden al recuperar Supabase y solo
-entonces limpia la cola local.
+Una instalación deliberadamente local puede encolar avisos con IDs idempotentes.
+Cuando Supabase está configurado, una sesión ausente o un backend de identidad
+caído falla cerrado y no conmuta a almacenamiento local: así se evita crear una
+segunda fuente de verdad mientras la base remota no está disponible.
 
 ## Paridad del contrato
 

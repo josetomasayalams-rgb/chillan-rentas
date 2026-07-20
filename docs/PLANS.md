@@ -30,3 +30,7 @@ No dependas de mensajes de chat para reconstruir decisiones. El plan es el estad
 3. Ejecuta `make ci`, `make gc` y las verificaciones manuales aplicables.
 4. Completa resultados y brechas.
 5. Mueve el archivo a `completed/` conservando el historial.
+
+## Activo
+
+- [Blindaje integral del calendario operacional](exec-plans/active/calendar-resilience-hardening.md)
