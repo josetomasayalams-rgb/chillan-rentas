@@ -50,11 +50,7 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "35";
-const AUTHORIZED_EMAILS = new Set([
-  "josetomasayalams@gmail.com",
-  "scamussotomayor@gmail.com",
-]);
+const VERSION = "36";
 const MON_SHORT = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
 const LS = {
@@ -464,10 +460,66 @@ function coordinationData(recipientKey="beatriz"){
 }
 
 function isNotificationActionable(notification){
-  return !!notification?.is_active && ["pending", "needs_update"].includes(notification.status);
+  if (!notification) return false;
+  if (notification.is_active) return ["pending", "needs_update"].includes(notification.status);
+  return notification.status === "removed" && !!notification.confirmed_at;
 }
-function isNotificationVisibleForRole(notification, isAdmin){
-  return !!notification?.is_active && (isAdmin || isNotificationActionable(notification));
+function isNotificationVisibleForRole(notification, isAdmin, includeConfirmed=false){
+  if (!notification) return false;
+  if (isNotificationActionable(notification)) return true;
+  if (!isAdmin) return false;
+  if (notification.status === "opened") return true;
+  return includeConfirmed && notification.status === "confirmed";
+}
+
+function coordinationActionForRental(rental, recipientKey="beatriz", notificationOverride=undefined){
+  const recipient = coordinationRecipient(recipientKey);
+  if (!rental){
+    return { actionable:false, rental:null, notification:null, label:`📱 ${recipient.name}`, title:"Reserva no disponible" };
+  }
+  if (!rental.readOnly){
+    const actionable = rental.status !== "cancelled";
+    return {
+      actionable,
+      rental,
+      notification:null,
+      label:`📱 ${recipient.name}`,
+      title: actionable ? `Preparar mensaje para ${recipient.name}` : "La reserva está cancelada",
+    };
+  }
+  const notification = notificationOverride === undefined
+    ? notificationForReservation(rental.reservationId, recipientKey)
+    : notificationOverride;
+  const actionable = isNotificationActionable(notification);
+  const suffix = notification?.status === "needs_update"
+    ? " · actualizar"
+    : notification?.status === "removed"
+      ? " · cancelar"
+      : notification?.status === "confirmed"
+        ? " · avisada"
+        : notification?.status === "opened"
+          ? " · por confirmar"
+          : notification?.status === "finished"
+            ? " · finalizada"
+            : notification ? "" : " · sincronizando";
+  const title = actionable
+    ? notification.status === "needs_update"
+      ? `Preparar corrección para ${recipient.name}`
+      : notification.status === "removed"
+        ? `Preparar cancelación para ${recipient.name}`
+        : `Preparar mensaje para ${recipient.name}`
+    : notification?.status === "confirmed"
+      ? `Esta reserva ya fue avisada a ${recipient.name}`
+      : notification?.status === "opened"
+        ? `Confirma primero si el mensaje a ${recipient.name} fue enviado`
+        : `No hay un aviso pendiente para ${recipient.name}`;
+  return {
+    actionable,
+    rental: notification ? rentalForNotification(notification) : null,
+    notification,
+    label:`📱 ${recipient.name}${suffix}`,
+    title,
+  };
 }
 
 function planNotificationReconciliation(existing, reservations, options = {}){
@@ -688,6 +740,38 @@ function localStore(){
       set(storageKey, list);
       queue("addNotificationEvent", recipientKey, event);
     },
+    async registerPriorNotifications(recipientKey, reservationIds){
+      const notificationKey = recipientKey === "rodrigo" ? LS.rodrigoNotifications : LS.notifications;
+      const batchKey = recipientKey === "rodrigo" ? LS.rodrigoNotificationBatches : LS.notificationBatches;
+      const eventKey = recipientKey === "rodrigo" ? LS.rodrigoNotificationEvents : LS.notificationEvents;
+      const notifications = get(notificationKey);
+      const nowIso = new Date().toISOString();
+      const plan = planAlreadySentRegistration(notifications, reservationIds, nowIso);
+      if (!plan.updates.length) return 0;
+      const previousById = new Map(notifications.map(item => [item.reservation_id, item]));
+      const updateById = new Map(plan.updates.map(item => [item.reservation_id, item]));
+      const obsoleteBatchIds = new Set(plan.updates
+        .map(item => previousById.get(item.reservation_id)?.last_batch_id)
+        .filter(Boolean));
+      const batches = get(batchKey);
+      const resolvedBatches = [];
+      const nextBatches = batches.map(batch => {
+        if (!obsoleteBatchIds.has(batch.id) || batch.status !== "opened") return batch;
+        const resolved = { ...batch, status:"not_confirmed", resolved_at:nowIso, updated_at:nowIso };
+        resolvedBatches.push(resolved);
+        return resolved;
+      });
+      const events = plan.events.map(descriptor => ({
+        id:uuid(), ...descriptor, batch_id:null, created_at:nowIso,
+      }));
+      set(notificationKey, notifications.map(item => updateById.get(item.reservation_id) || item));
+      set(batchKey, nextBatches);
+      set(eventKey, [...get(eventKey), ...events]);
+      plan.updates.forEach(item => queue("upsertNotification", recipientKey, item));
+      resolvedBatches.forEach(item => queue("upsertNotificationBatch", recipientKey, item));
+      events.forEach(item => queue("addNotificationEvent", recipientKey, item));
+      return plan.updates.length;
+    },
     onChange(cb){
       window.addEventListener("storage", e => {
         if ([LS.rentals, LS.cleanings, LS.comments, LS.notifications, LS.notificationBatches, LS.notificationEvents,
@@ -713,45 +797,9 @@ function unavailableStore(reason){
     upsertNotification:fail,
     upsertNotificationBatch:fail,
     addNotificationEvent:fail,
+    registerPriorNotifications:fail,
     onChange(){ return () => {}; },
   };
-}
-
-function showAuthGate(sb, message, denied=false){
-  const gate = document.getElementById("auth-gate");
-  const detail = document.getElementById("auth-detail");
-  const button = document.getElementById("auth-google");
-  if (!gate || !detail || !button) return;
-  detail.textContent = message;
-  gate.hidden = false;
-  gate.classList.toggle("denied", denied);
-  button.textContent = denied ? "Ingresar con otra cuenta" : "Ingresar con Google";
-  button.onclick = async () => {
-    await sb.auth.signOut({ scope:"local" });
-    const { error } = await sb.auth.signInWithOAuth({
-      provider:"google",
-      options:{ redirectTo:`${location.origin}${location.pathname}` },
-    });
-    if (error) detail.textContent = `No se pudo iniciar sesión: ${error.message}`;
-  };
-}
-
-async function requireAuthorizedSession(sb){
-  const { data, error } = await sb.auth.getSession();
-  if (error) throw error;
-  const email = data.session?.user?.email?.trim().toLowerCase() || "";
-  if (!email){
-    showAuthGate(sb, "Inicia sesión con una de las dos cuentas administradoras.");
-    return false;
-  }
-  if (!AUTHORIZED_EMAILS.has(email)){
-    await sb.auth.signOut({ scope:"local" });
-    showAuthGate(sb, "Esta cuenta no tiene permiso para modificar la operación.", true);
-    return false;
-  }
-  const gate = document.getElementById("auth-gate");
-  if (gate) gate.hidden = true;
-  return true;
 }
 
 function makeSupabaseStore(sb){
@@ -816,6 +864,14 @@ function makeSupabaseStore(sb){
       const { error } = await sb.from(`${recipientKey}_notification_events`).upsert(event, { onConflict: "id", ignoreDuplicates: true });
       if (error) throw error;
     },
+    async registerPriorNotifications(recipientKey, reservationIds){
+      const { data, error } = await sb.rpc("register_prior_notifications", {
+        p_recipient: recipientKey,
+        p_reservation_ids: reservationIds,
+      });
+      if (error) throw error;
+      return Number(data || 0);
+    },
     onChange(cb){
       const channel = sb.channel("ops-changes")
         .on("postgres_changes", { event: "*", schema: "public", table: "rentals"   }, () => cb())
@@ -855,10 +911,6 @@ async function initStore(){
     try{
       const { createClient } = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
       const sb = createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey);
-      if (!await requireAuthorizedSession(sb)){
-        state.store = unavailableStore("Autenticación requerida");
-        configuredButFailed = true;
-      } else {
       const candidate = makeSupabaseStore(sb);
 
       // Probe: hacer un loadAll antes de setear state.store. Si las tablas
@@ -882,14 +934,15 @@ async function initStore(){
         state.store = candidate;
         state._probeData = probe;
       }
-      }
     }catch(err){
       console.error("Supabase init falló:", err);
       state.store = unavailableStore("No se pudo conectar al calendario compartido");
       configuredButFailed = true;
     }
   }
-  if (!state.store) state.store = CONFIG.supabaseUrl ? unavailableStore("Autenticación requerida") : localStore();
+  if (!state.store) state.store = CONFIG.supabaseUrl
+    ? unavailableStore("No se pudo conectar al calendario compartido")
+    : localStore();
 
   // Badge: "live" solo si el probe trajo datos sin error. "schema" y "network"
   // son fallback a local (el badge muestra warning + v).
@@ -952,9 +1005,10 @@ async function load(isRemotePush=false){
     state.rodrigoNotificationEvents = data.rodrigoNotificationEvents || [];
     for (const recipientKey of COORDINATION_RECIPIENT_KEYS){
       const coordination = coordinationData(recipientKey);
-      if (!coordination.ui.pendingBatch){
-        coordination.ui.pendingBatch = coordination.batches.find(batch => batch.status === "opened") || null;
-      }
+      coordination.ui.pendingBatch = coordination.batches.find(batch =>
+        batch.status === "opened"
+        && coordination.notifications.some(notification =>
+          notification.last_batch_id === batch.id && notification.status === "opened")) || null;
     }
     state.loadError = null;
     state.updatedAt = new Date().toISOString();
@@ -1051,16 +1105,35 @@ function notificationForReservation(reservationId, recipientKey="beatriz"){
   return coordinationData(recipientKey).notifications.find(item => item.reservation_id === reservationId) || null;
 }
 
+function rentalForNotification(notification){
+  const current = state.calendarReservations.find(rental => rental.reservationId === notification.reservation_id);
+  return {
+    ...(current || {
+      id: `calendar:${notification.reservation_id}`,
+      reservationId: notification.reservation_id,
+      source: "calendar",
+      reference: null,
+      guest_name: null,
+      checkin_date: notification.checkin_date,
+      checkout_date: notification.checkout_date,
+      notes: null,
+      status: "scheduled",
+      created_at: notification.created_at,
+      readOnly: true,
+      archived: true,
+    }),
+    coordinationStatus: notification.status,
+    coordinationActive: !!notification.is_active,
+  };
+}
+
 function activeNotificationRentals(recipientKey="beatriz", { includeConfirmed=false } = {}){
-  return state.calendarReservations.filter(rental => {
-    const notification = notificationForReservation(rental.reservationId, recipientKey);
-    if (!notification?.is_active) return false;
-    return includeConfirmed
-      ? ["pending", "opened", "confirmed", "needs_update"].includes(notification.status)
-      : isNotificationActionable(notification);
-  }).sort((left, right) =>
-    left.checkin_date.localeCompare(right.checkin_date) || left.checkout_date.localeCompare(right.checkout_date)
-  );
+  return coordinationData(recipientKey).notifications
+    .filter(notification => includeConfirmed
+      ? isNotificationVisibleForRole(notification, true, true)
+      : isNotificationActionable(notification))
+    .map(rentalForNotification)
+    .sort(compareReservations);
 }
 
 async function refreshCalendarAndNotifications({ announce=false } = {}){
@@ -1579,6 +1652,9 @@ function renderGrid(){
 function openPopover(r, anchor){
   const pop = document.getElementById("pop");
   const meta = sourceMeta(r.source);
+  const coordinationActions = COORDINATION_RECIPIENT_KEYS.map(recipientKey =>
+    ({ recipientKey, ...coordinationActionForRental(r, recipientKey) })
+  );
   const c0 = cleaningForRental(r);
   const cleaningLine = c0
     ? `<div class="prow"><span>Tarea</span><b>${escapeHtml(prettyShort(c0.scheduled_date))} · ${escapeHtml(c0.status)}</b></div>`
@@ -1590,8 +1666,7 @@ function openPopover(r, anchor){
   // (verde) y va primero porque es la acción más común al crear.
   const adminActions = state.admin ? `
     <div class="pactions">
-      <button class="pbtn wa-btn" data-act="whatsapp" data-recipient="beatriz">📱 Beatriz</button>
-      <button class="pbtn wa-btn" data-act="whatsapp" data-recipient="rodrigo">📱 Rodrigo</button>
+      ${coordinationActions.map(action => `<button class="pbtn wa-btn" data-act="whatsapp" data-recipient="${escapeHtml(action.recipientKey)}" title="${escapeHtml(action.title)}" ${action.actionable ? "" : "disabled"}>${escapeHtml(action.label)}</button>`).join("")}
       ${r.readOnly ? "" : `<button class="pbtn" data-act="edit">Editar</button>
       <button class="pbtn danger" data-act="cancel">Cancelar reserva</button>`}
     </div>
@@ -1626,8 +1701,13 @@ function openPopover(r, anchor){
           confirmCancelRental(r);
         } else if (act === "whatsapp"){
           const recipientKey = btn.dataset.recipient || "beatriz";
-          if (r.readOnly) openNotificationWhatsApp(recipientKey, [r], "individual");
-          else openWhatsApp(r, recipientKey);
+          const action = coordinationActionForRental(r, recipientKey);
+          if (!action.actionable || !action.rental){
+            toast(action.title, "warn", 4500);
+            return;
+          }
+          if (r.readOnly) openNotificationWhatsApp(recipientKey, [action.rental], "individual");
+          else openWhatsApp(action.rental, recipientKey);
         }
       });
     });
@@ -1655,8 +1735,35 @@ function coffeeReminderLine(rental, coffeeByReservation, prefix="• "){
   return `${prefix}Café (${coffee.nights} ${nightLabel}, ${coffee.guests} ${guestLabel}): ${coffee.sachets} sachets de café + ${coffee.dolceGusto} cápsulas Dolce Gusto`;
 }
 
+function coordinationMessageKind(rental){
+  if (rental?.coordinationStatus === "removed") return "cancelled";
+  if (rental?.coordinationStatus === "needs_update") return "updated";
+  return "new";
+}
+
 function buildWhatsAppMessage(r, recipientKey="beatriz", coffeeByReservation=null){
+  const kind = coordinationMessageKind(r);
   if (recipientKey === "rodrigo"){
+    if (kind === "cancelled"){
+      return [
+        "Hola Rodrigo, espero que estés bien. Te aviso una cancelación que reemplaza la coordinación anterior del departamento de Chillán.",
+        "",
+        `• Dejar sin efecto la reserva con llegada ${prettyShort(r.checkin_date)} · ${CHECKIN_TIME}`,
+        `• Salida que estaba prevista: ${prettyShort(r.checkout_date)} · ${CHECKOUT_TIME}`,
+        "",
+        "Por favor, elimina esas fechas del control de acceso y de la coordinación de conserjería. Gracias.",
+      ].join("\n");
+    }
+    if (kind === "updated"){
+      return [
+        "Hola Rodrigo, espero que estés bien. Esta es la nueva coordinación que reemplaza la anterior para la reserva del departamento de Chillán.",
+        "",
+        `• Nueva llegada de huéspedes: ${prettyShort(r.checkin_date)} · ${CHECKIN_TIME}`,
+        `• Nueva salida de huéspedes: ${prettyShort(r.checkout_date)} · ${CHECKOUT_TIME}`,
+        "",
+        "Por favor, reemplaza las fechas anteriores por estas en el control de acceso y la coordinación de conserjería. Gracias.",
+      ].join("\n");
+    }
     return [
       "Hola Rodrigo, espero que estés bien. Te comparto una reserva confirmada del departamento de Chillán para coordinación de conserjería.",
       "",
@@ -1666,7 +1773,30 @@ function buildWhatsAppMessage(r, recipientKey="beatriz", coffeeByReservation=nul
       "Por favor, tenla registrada para el control de acceso y el apoyo de ingreso y salida. Gracias.",
     ].join("\n");
   }
+  if (kind === "cancelled"){
+    return [
+      "Hola Beatriz, espero que estés bien. Te aviso una cancelación que reemplaza la coordinación anterior del departamento de Chillán.",
+      "",
+      `• Dejar sin efecto la reserva con check-in ${prettyShort(r.checkin_date)} · ${CHECKIN_TIME}`,
+      `• Check-out que estaba previsto: ${prettyShort(r.checkout_date)} · ${CHECKOUT_TIME}`,
+      `• Cancelar la limpieza del ${prettyShort(r.checkout_date)} desde las ${CHECKOUT_TIME}`,
+      "",
+      "Por favor, deja sin efecto esa limpieza y las fechas anteriores. Gracias.",
+    ].join("\n");
+  }
   const coffeeLine = coffeeReminderLine(r, coffeeByReservation);
+  if (kind === "updated"){
+    return [
+      "Hola Beatriz, espero que estés bien. Esta es la nueva coordinación que reemplaza la anterior para la reserva del departamento de Chillán.",
+      "",
+      `• Nuevo check-in: ${prettyShort(r.checkin_date)} · ${CHECKIN_TIME}`,
+      `• Nuevo check-out: ${prettyShort(r.checkout_date)} · ${CHECKOUT_TIME}`,
+      `• Nueva limpieza: ${prettyShort(r.checkout_date)} desde las ${CHECKOUT_TIME}`,
+      ...(coffeeLine ? [coffeeLine] : []),
+      "",
+      "Por favor, reemplaza las fechas anteriores por estas y confírmame tu disponibilidad para la nueva limpieza. Gracias.",
+    ].join("\n");
+  }
   return [
     "Hola Beatriz, espero que estés bien. Te aviso de una reserva confirmada en el departamento de Chillán.",
     "",
@@ -1680,28 +1810,52 @@ function buildWhatsAppMessage(r, recipientKey="beatriz", coffeeByReservation=nul
 }
 
 function buildGroupedWhatsAppMessage(rentals, recipientKey="beatriz", coffeeByReservation=null){
+  const hasCorrections = rentals.some(rental => coordinationMessageKind(rental) !== "new");
+  const hasActiveCoordination = rentals.some(rental => coordinationMessageKind(rental) !== "cancelled");
   if (recipientKey === "rodrigo"){
     const lines = [
-      "Hola Rodrigo, espero que estés bien. Te comparto las próximas reservas confirmadas del departamento de Chillán para coordinación de conserjería:",
+      hasCorrections
+        ? "Hola Rodrigo, espero que estés bien. Te comparto la nueva coordinación que reemplaza los avisos anteriores, junto con cualquier reserva nueva del departamento de Chillán:"
+        : "Hola Rodrigo, espero que estés bien. Te comparto las próximas reservas confirmadas del departamento de Chillán para coordinación de conserjería:",
       "",
     ];
     rentals.forEach((rental, index) => {
-      lines.push(`${index + 1}. Llegada ${prettyShort(rental.checkin_date)} ${CHECKIN_TIME} → salida ${prettyShort(rental.checkout_date)} ${CHECKOUT_TIME}`);
+      const kind = coordinationMessageKind(rental);
+      if (kind === "cancelled"){
+        lines.push(`${index + 1}. CANCELACIÓN — dejar sin efecto la llegada ${prettyShort(rental.checkin_date)} ${CHECKIN_TIME} y la salida ${prettyShort(rental.checkout_date)} ${CHECKOUT_TIME}`);
+      } else if (kind === "updated"){
+        lines.push(`${index + 1}. ACTUALIZACIÓN — nuevas fechas: llegada ${prettyShort(rental.checkin_date)} ${CHECKIN_TIME} → salida ${prettyShort(rental.checkout_date)} ${CHECKOUT_TIME}`);
+      } else {
+        lines.push(`${index + 1}. Llegada ${prettyShort(rental.checkin_date)} ${CHECKIN_TIME} → salida ${prettyShort(rental.checkout_date)} ${CHECKOUT_TIME}`);
+      }
     });
-    lines.push("", "Por favor, tenlas registradas para el control de acceso y el apoyo de ingreso y salida. Gracias.");
+    lines.push("", hasCorrections
+      ? "Por favor, reemplaza las coordinaciones anteriores por este resumen en el control de acceso y conserjería. Gracias."
+      : "Por favor, tenlas registradas para el control de acceso y el apoyo de ingreso y salida. Gracias.");
     return lines.join("\n");
   }
   const lines = [
-    "Hola Beatriz, espero que estés bien. Te aviso de las próximas reservas confirmadas en el departamento de Chillán:",
+    hasCorrections
+      ? "Hola Beatriz, espero que estés bien. Te comparto la nueva coordinación que reemplaza los avisos anteriores, junto con cualquier reserva nueva del departamento de Chillán:"
+      : "Hola Beatriz, espero que estés bien. Te aviso de las próximas reservas confirmadas en el departamento de Chillán:",
     "",
   ];
   rentals.forEach((rental, index) => {
-    lines.push(`${index + 1}. Check-in ${prettyShort(rental.checkin_date)} ${CHECKIN_TIME} → Check-out ${prettyShort(rental.checkout_date)} ${CHECKOUT_TIME}`);
-    lines.push(`   Limpieza: ${prettyShort(rental.checkout_date)} desde las ${CHECKOUT_TIME}`);
-    const coffeeLine = coffeeReminderLine(rental, coffeeByReservation, "   ");
-    if (coffeeLine) lines.push(coffeeLine);
+    const kind = coordinationMessageKind(rental);
+    if (kind === "cancelled"){
+      lines.push(`${index + 1}. CANCELACIÓN — dejar sin efecto el check-in ${prettyShort(rental.checkin_date)} ${CHECKIN_TIME}, el check-out ${prettyShort(rental.checkout_date)} ${CHECKOUT_TIME} y esa limpieza.`);
+    } else {
+      lines.push(`${index + 1}. ${kind === "updated" ? "ACTUALIZACIÓN — nuevas fechas: " : ""}Check-in ${prettyShort(rental.checkin_date)} ${CHECKIN_TIME} → Check-out ${prettyShort(rental.checkout_date)} ${CHECKOUT_TIME}`);
+      lines.push(`   ${kind === "updated" ? "Nueva limpieza" : "Limpieza"}: ${prettyShort(rental.checkout_date)} desde las ${CHECKOUT_TIME}`);
+      const coffeeLine = coffeeReminderLine(rental, coffeeByReservation, "   ");
+      if (coffeeLine) lines.push(coffeeLine);
+    }
   });
-  lines.push("", "¿Puedes confirmarme tu disponibilidad para estas limpiezas de salida? Gracias.");
+  lines.push("", hasCorrections
+    ? hasActiveCoordination
+      ? "Por favor, reemplaza las coordinaciones anteriores por este resumen y confírmame las limpiezas indicadas. Gracias."
+      : "Por favor, deja sin efecto estas limpiezas y confírmame que recibiste las cancelaciones. Gracias."
+    : "¿Puedes confirmarme tu disponibilidad para estas limpiezas de salida? Gracias.");
   return lines.join("\n");
 }
 
@@ -1744,7 +1898,9 @@ async function recordNotificationBatchOpened(recipientKey, rentals, mode){
       ...previous,
       status: "opened",
       opened_at: nowIso,
-      confirmed_at: null,
+      // Conserva la confirmación anterior mientras se envía una corrección o
+      // cancelación. Permite restaurar el tipo correcto si el envío no ocurre.
+      confirmed_at: previous.confirmed_at || null,
       last_batch_id: batch.id,
       updated_at: nowIso,
     };
@@ -1768,8 +1924,12 @@ async function recordNotificationBatchOpened(recipientKey, rentals, mode){
 
 async function openNotificationWhatsApp(recipientKey, rentals, mode="individual", coffeeByReservation=null){
   if (!state.admin) return;
-  if (recipientKey === "beatriz" && !coffeeByReservation){
-    openBeatrizCoffeePrompt(rentals, mode, "notification");
+  const coordinationModal = document.getElementById("coordination-modal");
+  const returnToCoordination = !!coordinationModal && !coordinationModal.hidden;
+  if (returnToCoordination) coordinationModal.hidden = true;
+  const needsCoffee = rentals.some(rental => coordinationMessageKind(rental) !== "cancelled");
+  if (recipientKey === "beatriz" && needsCoffee && !coffeeByReservation){
+    openBeatrizCoffeePrompt(rentals, mode, "notification", returnToCoordination);
     return;
   }
   const recipient = coordinationRecipient(recipientKey);
@@ -1862,13 +2022,19 @@ function openWhatsApp(rental, recipientKey="beatriz", coffeeByReservation=null){
   }
 }
 
-function openBeatrizCoffeePrompt(rentals, mode="individual", opener="notification"){
+function openBeatrizCoffeePrompt(rentals, mode="individual", opener="notification", returnToCoordination=false){
   if (!state.admin || !rentals?.length) return;
   const sorted = [...rentals].sort(compareReservations);
-  state.beatrizCoffeePrompt = { rentals: sorted, mode, opener };
+  const coffeeRentals = sorted.filter(rental => coordinationMessageKind(rental) !== "cancelled");
+  if (!coffeeRentals.length){
+    if (opener === "notification") openNotificationWhatsApp("beatriz", sorted, mode, {});
+    else openWhatsApp(sorted[0], "beatriz", {});
+    return;
+  }
+  state.beatrizCoffeePrompt = { rentals: sorted, coffeeRentals, mode, opener, returnToCoordination };
   const modal = document.getElementById("beatriz-coffee-modal");
   const rows = document.getElementById("beatriz-coffee-rows");
-  rows.innerHTML = sorted.map((rental, index) => {
+  rows.innerHTML = coffeeRentals.map((rental, index) => {
     const key = reservationVisualId(rental);
     const nights = reservationNightCount(rental);
     return `
@@ -1893,8 +2059,14 @@ function openBeatrizCoffeePrompt(rentals, mode="individual", opener="notificatio
 
 function closeBeatrizCoffeePrompt(){
   const modal = document.getElementById("beatriz-coffee-modal");
+  const prompt = state.beatrizCoffeePrompt;
   if (modal) modal.hidden = true;
   state.beatrizCoffeePrompt = null;
+  if (prompt?.returnToCoordination){
+    document.getElementById("coordination-modal").hidden = false;
+    renderCoordinationInbox();
+    requestAnimationFrame(() => document.querySelector("#coordination-modal .coordination-modal")?.focus());
+  }
 }
 
 function collectBeatrizCoffeeGuests(){
@@ -1913,7 +2085,7 @@ function updateBeatrizCoffeeSummary(){
   const guestsByReservation = collectBeatrizCoffeeGuests();
   let totalSachets = 0;
   let totalDolceGusto = 0;
-  prompt.rentals.forEach(rental => {
+  prompt.coffeeRentals.forEach(rental => {
     const key = reservationVisualId(rental);
     const coffee = coffeeProvisionForRental(rental, guestsByReservation[key]);
     totalSachets += coffee.sachets;
@@ -1921,9 +2093,9 @@ function updateBeatrizCoffeeSummary(){
     const output = document.querySelector(`[data-coffee-result="${CSS.escape(key)}"]`);
     if (output) output.textContent = `${coffee.sachets} sachets + ${coffee.dolceGusto} Dolce Gusto`;
   });
-  document.getElementById("beatriz-coffee-total").textContent = prompt.rentals.length === 1
+  document.getElementById("beatriz-coffee-total").textContent = prompt.coffeeRentals.length === 1
     ? `Se agregarán ${totalSachets} sachets de café y ${totalDolceGusto} cápsulas Dolce Gusto al mensaje.`
-    : `Total para ${prompt.rentals.length} reservas: ${totalSachets} sachets de café y ${totalDolceGusto} cápsulas Dolce Gusto.`;
+    : `Total para ${prompt.coffeeRentals.length} reservas: ${totalSachets} sachets de café y ${totalDolceGusto} cápsulas Dolce Gusto.`;
 }
 
 async function confirmBeatrizCoffeePrompt(){
@@ -1982,9 +2154,10 @@ function updateCoordinationButton(recipientKey){
   if (!btn) return;
   const pending = activeNotificationRentals(recipientKey).length;
   const opened = state.admin
-    ? coordination.notifications.filter(item => item.is_active && item.status === "opened").length
+    ? coordination.notifications.filter(item => item.status === "opened").length
     : 0;
-  btn.disabled = pending + opened === 0;
+  const hasHistory = coordination.notifications.length > 0;
+  btn.disabled = state.admin ? !hasHistory : pending + opened === 0;
   btn.textContent = pending
     ? `📱 ${coordination.recipient.name} · ${pending}`
     : opened ? `📱 ${coordination.recipient.name} · confirmar ${opened}` : `📱 ${coordination.recipient.name}`;
@@ -1997,18 +2170,94 @@ function updateCoordinationButtons(){
   COORDINATION_RECIPIENT_KEYS.forEach(updateCoordinationButton);
 }
 
+function planAlreadySentRegistration(notifications, reservationIds, nowIso = new Date().toISOString()){
+  const selected = new Set(reservationIds || []);
+  const updates = (notifications || [])
+    .filter(previous => selected.has(previous.reservation_id)
+      && isNotificationActionable(previous))
+    .map(previous => ({
+      ...previous,
+      status: "confirmed",
+      confirmed_at: nowIso,
+      last_batch_id: null,
+      updated_at: nowIso,
+    }));
+  return {
+    updates,
+    events: updates.map(updated => {
+      const previous = (notifications || []).find(item => item.reservation_id === updated.reservation_id);
+      return {
+        reservation_id: updated.reservation_id,
+        event_type: "confirmed",
+        previous_status: previous?.status || null,
+        next_status: "confirmed",
+        checkin_date: updated.checkin_date,
+        checkout_date: updated.checkout_date,
+      };
+    }),
+  };
+}
+
+async function registerNotificationsAlreadySent(recipientKey, reservationIds){
+  const coordination = coordinationData(recipientKey);
+  const plan = planAlreadySentRegistration(coordination.notifications, reservationIds);
+  if (!plan.updates.length) return false;
+  const savedCount = await state.store.registerPriorNotifications(recipientKey, reservationIds);
+  const obsoleteBatchIds = new Set(plan.updates
+    .map(updated => coordination.notifications.find(item => item.reservation_id === updated.reservation_id)?.last_batch_id)
+    .filter(Boolean));
+  const nowIso = new Date().toISOString();
+  for (const updated of plan.updates){
+    const index = coordination.notifications.findIndex(item => item.reservation_id === updated.reservation_id);
+    if (index >= 0) coordination.notifications[index] = updated;
+  }
+  coordination.batches.forEach((batch, index) => {
+    if (obsoleteBatchIds.has(batch.id) && batch.status === "opened"){
+      coordination.batches[index] = { ...batch, status:"not_confirmed", resolved_at:nowIso, updated_at:nowIso };
+    }
+  });
+  coordination.ui.pendingBatch = null;
+  coordination.ui.inboxSelection.clear();
+  coordination.ui.separateQueue = [];
+  await load();
+  if (!savedCount) return false;
+  toast(`${savedCount} reserva${savedCount === 1 ? "" : "s"} ${savedCount === 1 ? "quedó" : "quedaron"} registrada${savedCount === 1 ? "" : "s"} como ya avisada${savedCount === 1 ? "" : "s"} a ${coordination.recipient.name}.`, "ok", 5000);
+  return true;
+}
+
 function planBatchResolution(notifications, batch, sent, nowIso = new Date().toISOString()){
   const updates = [];
   const events = [];
   for (const previous of notifications || []){
     if (previous.last_batch_id !== batch.id) continue;
-    const nextStatus = previous.status === "needs_update"
-      ? "needs_update"
-      : sent ? "confirmed" : "pending";
+    let nextStatus = previous.status;
+    let confirmedAt = previous.confirmed_at || null;
+    if (previous.status === "needs_update"){
+      // Las fechas cambiaron después de abrir WhatsApp. Aunque se confirme el
+      // mensaje anterior, la nueva coordinación debe seguir pendiente.
+      nextStatus = sent || confirmedAt ? "needs_update" : "pending";
+      if (sent) confirmedAt = nowIso;
+    } else if (previous.status === "removed"){
+      // La reserva se canceló después de abrir WhatsApp. Confirmar el mensaje
+      // anterior hace que esta cancelación sea accionable; nunca la oculta.
+      nextStatus = "removed";
+      if (sent) confirmedAt = nowIso;
+    } else if (previous.status === "opened"){
+      nextStatus = sent
+        ? "confirmed"
+        : confirmedAt
+          ? previous.is_active ? "needs_update" : "removed"
+          : "pending";
+      if (sent) confirmedAt = nowIso;
+    } else if (sent && previous.status === "finished"){
+      // Conserva el cierre histórico, pero registra que el mensaje abierto sí
+      // alcanzó a enviarse antes de finalizar la estadía.
+      confirmedAt = confirmedAt || nowIso;
+    }
     const updated = {
       ...previous,
       status: nextStatus,
-      confirmed_at: sent && nextStatus === "confirmed" ? nowIso : null,
+      confirmed_at: confirmedAt,
       updated_at: nowIso,
     };
     updates.push(updated);
@@ -2053,14 +2302,21 @@ async function correctNotificationConfirmation(recipientKey, reservationId){
   const previous = notificationForReservation(reservationId, recipientKey);
   if (!previous || previous.status !== "confirmed") return;
   const nowIso = new Date().toISOString();
-  const updated = { ...previous, status: "pending", confirmed_at: null, last_batch_id: null, updated_at: nowIso };
+  const nextStatus = previous.is_active ? "pending" : "removed";
+  const updated = {
+    ...previous,
+    status: nextStatus,
+    confirmed_at: previous.is_active ? null : previous.confirmed_at,
+    last_batch_id: null,
+    updated_at: nowIso,
+  };
   await state.store.upsertNotification(recipientKey, updated);
   coordination.notifications[coordination.notifications.findIndex(item => item.reservation_id === reservationId)] = updated;
   await persistNotificationEvent(recipientKey, {
     reservation_id: reservationId,
     event_type: "confirmation_corrected",
     previous_status: "confirmed",
-    next_status: "pending",
+    next_status: nextStatus,
     checkin_date: updated.checkin_date,
     checkout_date: updated.checkout_date,
   });
@@ -2070,11 +2326,13 @@ async function correctNotificationConfirmation(recipientKey, reservationId){
 
 function showWhatsAppConfirmation(recipientKey, batch){
   if (!state.admin || !batch) return;
+  document.getElementById("coordination-modal").hidden = true;
   const recipient = coordinationRecipient(recipientKey);
   const modal = document.getElementById("whatsapp-confirm-modal");
   const rentals = batch.reservation_ids
-    .map(id => state.calendarReservations.find(rental => rental.reservationId === id))
-    .filter(Boolean);
+    .map(id => notificationForReservation(id, recipientKey))
+    .filter(Boolean)
+    .map(rentalForNotification);
   document.getElementById("whatsapp-confirm-summary").innerHTML = rentals.length
     ? rentals.map(rental => `<li>${escapeHtml(prettyShort(rental.checkin_date))} → ${escapeHtml(prettyShort(rental.checkout_date))}</li>`).join("")
     : "<li>Reserva sincronizada</li>";
@@ -2097,26 +2355,54 @@ function maybeShowWhatsAppConfirmation(){
   for (const recipientKey of COORDINATION_RECIPIENT_KEYS){
     const batch = coordinationData(recipientKey).ui.pendingBatch;
     if (!batch || batch.status !== "opened") continue;
+    if (!coordinationData(recipientKey).notifications.some(notification =>
+      notification.last_batch_id === batch.id && notification.status === "opened")){
+      coordinationData(recipientKey).ui.pendingBatch = null;
+      continue;
+    }
     if (Date.now() - new Date(batch.opened_at).getTime() < 700) continue;
     showWhatsAppConfirmation(recipientKey, batch);
     return;
   }
 }
 
-function openCoordinationInbox(recipientKey){
+function openCoordinationInbox(recipientKey, preservedSelection=null){
   state.activeCoordinationRecipient = recipientKey;
   const coordination = coordinationData(recipientKey);
   coordination.ui.inboxSelection = state.admin
-    ? new Set(activeNotificationRentals(recipientKey).map(rental => rental.reservationId))
+    ? preservedSelection
+      ? new Set([...preservedSelection].filter(id => isNotificationActionable(notificationForReservation(id, recipientKey))))
+      : new Set(activeNotificationRentals(recipientKey).map(rental => rental.reservationId))
     : new Set();
   coordination.ui.separateQueue = [];
   document.getElementById("coordination-modal").hidden = false;
   renderCoordinationInbox();
+  requestAnimationFrame(() => document.querySelector("#coordination-modal .coordination-modal")?.focus());
 }
 
 function closeCoordinationInbox(){
   document.getElementById("coordination-modal").hidden = true;
   coordinationData(state.activeCoordinationRecipient).ui.separateQueue = [];
+}
+
+function updateCoordinationSelectionActions(){
+  const recipientKey = state.activeCoordinationRecipient;
+  const coordination = coordinationData(recipientKey);
+  const selected = state.admin
+    ? [...coordination.ui.inboxSelection]
+      .filter(id => isNotificationActionable(notificationForReservation(id, recipientKey)))
+    : [];
+  const prepare = document.getElementById("coordination-prepare");
+  prepare.disabled = selected.length === 0;
+  prepare.textContent = selected.length
+    ? `Preparar ${selected.length} aviso${selected.length === 1 ? "" : "s"}`
+    : "Selecciona reservas";
+  const alreadySent = document.getElementById("coordination-already-sent");
+  alreadySent.disabled = selected.length === 0;
+  alreadySent.textContent = selected.length
+    ? `✓ Registrar aviso previo (${selected.length})`
+    : "Registrar aviso previo";
+  alreadySent.title = "Guardar que estos avisos ya se enviaron fuera de la plataforma, sin abrir WhatsApp.";
 }
 
 function renderCoordinationInbox(){
@@ -2135,12 +2421,18 @@ function renderCoordinationInbox(){
     coordination.ui.separateQueue = [];
     if (includeConfirmedControl) includeConfirmedControl.checked = false;
   }
-  const rentals = state.calendarReservations
-    .map(rental => ({ rental, notification: notificationForReservation(rental.reservationId, recipientKey) }))
-    .filter(item => isNotificationVisibleForRole(item.notification, canManage))
+  const rentals = coordination.notifications
+    .map(notification => ({ rental: rentalForNotification(notification), notification }))
+    .filter(item => isNotificationVisibleForRole(item.notification, canManage, includeConfirmed))
     .sort((left, right) => left.rental.checkin_date.localeCompare(right.rental.checkin_date));
   const actionableCount = rentals.filter(item => isNotificationActionable(item.notification)).length;
   const openedCount = rentals.filter(item => item.notification.status === "opened").length;
+  const selectableIds = new Set(rentals
+    .filter(item => isNotificationActionable(item.notification))
+    .map(item => item.rental.reservationId));
+  for (const id of coordination.ui.inboxSelection){
+    if (!selectableIds.has(id)) coordination.ui.inboxSelection.delete(id);
+  }
   document.getElementById("coordination-summary").textContent = !canManage
     ? actionableCount
       ? `${actionableCount} reserva${actionableCount === 1 ? "" : "s"} pendiente${actionableCount === 1 ? "" : "s"} de aviso. Solo el administrador puede preparar mensajes.`
@@ -2150,7 +2442,7 @@ function renderCoordinationInbox(){
       : openedCount ? `${openedCount} mensaje${openedCount === 1 ? "" : "s"} por confirmar.` : "No hay avisos pendientes.";
 
   list.innerHTML = rentals.length ? rentals.map(({ rental, notification }) => {
-    const selectable = canManage && (isNotificationActionable(notification) || (includeConfirmed && notification.status === "confirmed"));
+    const selectable = canManage && isNotificationActionable(notification);
     const checked = coordination.ui.inboxSelection.has(rental.reservationId);
     return `
       <article class="coordination-row status-${escapeHtml(notification.status)}">
@@ -2158,29 +2450,33 @@ function renderCoordinationInbox(){
           ${selectable ? `<input type="checkbox" data-reservation-id="${escapeHtml(rental.reservationId)}" ${checked ? "checked" : ""}>` : '<span class="selection-placeholder"></span>'}
           <span>
             <strong>Check-in ${escapeHtml(prettyShort(rental.checkin_date))} ${CHECKIN_TIME} → Check-out ${escapeHtml(prettyShort(rental.checkout_date))} ${CHECKOUT_TIME}</strong>
-            <small>${recipientKey === "beatriz" ? `Limpieza desde las ${CHECKOUT_TIME}` : "Coordinación de acceso y conserjería"}</small>
+            <small>${notification.status === "removed"
+              ? recipientKey === "beatriz" ? "Cancelación de limpieza pendiente" : "Cancelación de acceso pendiente"
+              : recipientKey === "beatriz" ? `Limpieza desde las ${CHECKOUT_TIME}` : "Coordinación de acceso y conserjería"}</small>
           </span>
         </label>
         <div class="coordination-row-state">
-          <span class="notification-status">${escapeHtml(NOTIFICATION_LABELS[notification.status] || notification.status)}</span>
+          <span class="notification-status">${escapeHtml(notification.status === "confirmed" && !notification.last_batch_id
+            ? "Aviso previo registrado"
+            : notification.status === "removed" && isNotificationActionable(notification)
+              ? "Cancelación pendiente de aviso"
+            : NOTIFICATION_LABELS[notification.status] || notification.status)}</span>
           ${canManage && notification.status === "opened" ? `<button class="pbtn" data-act="confirm-opened" data-batch-id="${escapeHtml(notification.last_batch_id || "")}">Confirmar envío</button>` : ""}
           ${canManage && notification.status === "confirmed" ? `<button class="pbtn ghost" data-act="correct" data-reservation-id="${escapeHtml(rental.reservationId)}">Corregir</button>` : ""}
         </div>
       </article>`;
-  }).join("") : '<p class="empty-row">Aún no hay reservas sincronizadas para coordinar.</p>';
+  }).join("") : coordination.notifications.length
+    ? `<p class="empty-row">Todo al día: no hay reservas pendientes de aviso para ${escapeHtml(coordination.recipient.name)}.</p>`
+    : '<p class="empty-row">Aún no hay reservas sincronizadas para coordinar.</p>';
 
-  const selected = canManage
-    ? [...coordination.ui.inboxSelection].filter(id => rentals.some(item => item.rental.reservationId === id))
-    : [];
-  const prepare = document.getElementById("coordination-prepare");
-  prepare.disabled = selected.length === 0;
-  prepare.textContent = selected.length ? `Preparar ${selected.length} aviso${selected.length === 1 ? "" : "s"}` : "Selecciona reservas";
+  updateCoordinationSelectionActions();
 
   const queue = document.getElementById("coordination-separate-queue");
   if (canManage && coordination.ui.separateQueue.length){
     queue.hidden = false;
     queue.innerHTML = `<strong>Mensajes separados para ${escapeHtml(coordination.recipient.name)}</strong>${coordination.ui.separateQueue.map(id => {
-      const rental = state.calendarReservations.find(item => item.reservationId === id);
+      const notification = notificationForReservation(id, recipientKey);
+      const rental = notification ? rentalForNotification(notification) : null;
       return rental ? `<button class="btn wa-btn" data-act="open-separate" data-reservation-id="${escapeHtml(id)}">📱 Abrir ${escapeHtml(prettyShort(rental.checkin_date))} → ${escapeHtml(prettyShort(rental.checkout_date))}</button>` : "";
     }).join("")}`;
   } else {
@@ -2204,6 +2500,8 @@ function openRentalsList(){
     list.innerHTML = rentals.map(r => {
       const meta = sourceMeta(r.source);
       const c0 = cleaningForRental(r);
+      const beatrizAction = coordinationActionForRental(r, "beatriz");
+      const rodrigoAction = coordinationActionForRental(r, "rodrigo");
       const statusBadge = r.status === "cancelled"
         ? `<span class="rl-badge cancelled">cancelado</span>`
         : c0
@@ -2221,8 +2519,8 @@ function openRentalsList(){
           </div>
           <div class="rl-actions">
             ${r.readOnly ? "" : `<button class="pbtn" data-act="edit" data-id="${r.id}" title="Editar">✏️ Editar</button>`}
-            <button class="pbtn wa-btn" data-act="whatsapp" data-recipient="beatriz" data-id="${r.id}" title="Preparar mensaje para Beatriz">📱 Beatriz</button>
-            <button class="pbtn wa-btn" data-act="whatsapp" data-recipient="rodrigo" data-id="${r.id}" title="Preparar mensaje para Rodrigo">📱 Rodrigo</button>
+            <button class="pbtn wa-btn" data-act="whatsapp" data-recipient="beatriz" data-id="${r.id}" title="${escapeHtml(beatrizAction.title)}" ${beatrizAction.actionable ? "" : "disabled"}>${escapeHtml(beatrizAction.label)}</button>
+            <button class="pbtn wa-btn" data-act="whatsapp" data-recipient="rodrigo" data-id="${r.id}" title="${escapeHtml(rodrigoAction.title)}" ${rodrigoAction.actionable ? "" : "disabled"}>${escapeHtml(rodrigoAction.label)}</button>
             ${!r.readOnly && r.status !== "cancelled" ? `<button class="pbtn danger" data-act="cancel" data-id="${r.id}" title="Cancelar reserva">Cancelar</button>` : ""}
           </div>
         </div>
@@ -2241,8 +2539,13 @@ function openRentalsList(){
         openRentalForm(r);
       } else if (act === "whatsapp"){
         const recipientKey = btn.dataset.recipient || "beatriz";
-        if (r.readOnly) openNotificationWhatsApp(recipientKey, [r], "individual");
-        else openWhatsApp(r, recipientKey);
+        const action = coordinationActionForRental(r, recipientKey);
+        if (!action.actionable || !action.rental){
+          toast(action.title, "warn", 4500);
+          return;
+        }
+        if (r.readOnly) openNotificationWhatsApp(recipientKey, [action.rental], "individual");
+        else openWhatsApp(action.rental, recipientKey);
       } else if (act === "cancel"){
         if (r.readOnly) return;
         modal.hidden = true;
@@ -2403,13 +2706,14 @@ async function saveRentalForm(){
 
 // ---------- Modal: confirmar (genérico) ----------
 let askConfirmResolver = null;
-function askConfirm({ title, tip, yesLabel = "Sí" } = {}){
+function askConfirm({ title, tip, yesLabel = "Sí", noLabel = "No" } = {}){
   return new Promise(resolve => {
     askConfirmResolver = resolve;
     document.getElementById("c-title").textContent = title || "¿Confirmar?";
     document.getElementById("c-tip").textContent = tip || "";
     const yesBtn = document.getElementById("c-yes");
     yesBtn.textContent = yesLabel;
+    document.getElementById("c-no").textContent = noLabel;
     document.getElementById("confirm-modal").hidden = false;
     requestAnimationFrame(() => yesBtn.focus());
   });
@@ -2891,7 +3195,8 @@ function bind(){
     const recipientKey = state.activeCoordinationRecipient;
     const coordination = coordinationData(recipientKey);
     if (action.dataset.act === "open-separate"){
-      const rental = state.calendarReservations.find(item => item.reservationId === action.dataset.reservationId);
+      const notification = notificationForReservation(action.dataset.reservationId, recipientKey);
+      const rental = notification ? rentalForNotification(notification) : null;
       if (!rental) return;
       await openNotificationWhatsApp(recipientKey, [rental], "individual");
       if (recipientKey !== "beatriz"){
@@ -2902,8 +3207,20 @@ function bind(){
       const batch = coordination.batches.find(item => item.id === action.dataset.batchId);
       showWhatsAppConfirmation(recipientKey, batch);
     } else if (action.dataset.act === "correct"){
-      const ok = await askConfirm({ title: "Corregir confirmación", tip: "La reserva volverá a quedar pendiente de aviso." });
-      if (ok) await correctNotificationConfirmation(recipientKey, action.dataset.reservationId);
+      const preservedSelection = new Set(coordination.ui.inboxSelection);
+      const reservationId = action.dataset.reservationId;
+      closeCoordinationInbox();
+      const ok = await askConfirm({ title: "Corregir confirmación", tip: "La coordinación volverá a quedar pendiente de aviso." });
+      if (ok){
+        try{
+          await correctNotificationConfirmation(recipientKey, reservationId);
+        }catch(error){
+          console.error("No se pudo corregir la confirmación:", categorizeError(error));
+          toast("No se pudo corregir la confirmación.", "warn", 5500);
+          await load();
+        }
+      }
+      openCoordinationInbox(recipientKey, preservedSelection);
     }
   });
   document.getElementById("coordination-modal").addEventListener("change", event => {
@@ -2913,16 +3230,53 @@ function bind(){
     if (event.target.matches('input[type="checkbox"][data-reservation-id]')){
       if (event.target.checked) coordination.ui.inboxSelection.add(event.target.dataset.reservationId);
       else coordination.ui.inboxSelection.delete(event.target.dataset.reservationId);
-      renderCoordinationInbox();
+      updateCoordinationSelectionActions();
     }
+  });
+  document.getElementById("coordination-already-sent").addEventListener("click", async () => {
+    if (!state.admin) return;
+    const recipientKey = state.activeCoordinationRecipient;
+    const coordination = coordinationData(recipientKey);
+    const reservationIds = [...coordination.ui.inboxSelection]
+      .filter(id => isNotificationActionable(notificationForReservation(id, recipientKey)));
+    if (!reservationIds.length || reservationIds.length !== coordination.ui.inboxSelection.size) return;
+    const rentals = reservationIds
+      .map(id => notificationForReservation(id, recipientKey))
+      .filter(Boolean)
+      .map(rentalForNotification)
+      .sort(compareReservations);
+    const dates = rentals
+      .map(rental => `${prettyShort(rental.checkin_date)} → ${prettyShort(rental.checkout_date)}`)
+      .join("; ");
+    const count = reservationIds.length;
+    const preservedSelection = new Set(coordination.ui.inboxSelection);
+    closeCoordinationInbox();
+    const confirmed = await askConfirm({
+      title: `¿Registrar ${count} reserva${count === 1 ? "" : "s"} como ya avisada${count === 1 ? "" : "s"} a ${coordination.recipient.name}?`,
+      tip: `Úsalo solo si ya enviaste ${count === 1 ? "este aviso" : "estos avisos"} antes o fuera de esta plataforma. No se abrirá WhatsApp y ${count === 1 ? "la reserva" : "las reservas"} dejará${count === 1 ? "" : "n"} de aparecer como pendiente${count === 1 ? "" : "s"}. Si cambia una fecha, volverá a aparecer. Fechas: ${dates}.`,
+      yesLabel: "Sí, registrar aviso previo",
+      noLabel: "Volver",
+    });
+    let registered = false;
+    if (confirmed){
+      try{
+        registered = await registerNotificationsAlreadySent(recipientKey, reservationIds);
+      }catch(error){
+        console.error("No se pudo registrar el aviso previo:", categorizeError(error));
+        toast("No se pudo guardar el aviso previo. Las reservas no se ocultarán hasta confirmar el guardado.", "warn", 6500);
+        await load();
+      }
+    }
+    openCoordinationInbox(recipientKey, registered ? null : preservedSelection);
   });
   document.getElementById("coordination-prepare").addEventListener("click", async () => {
     if (!state.admin) return;
     const recipientKey = state.activeCoordinationRecipient;
     const coordination = coordinationData(recipientKey);
     const rentals = [...coordination.ui.inboxSelection]
-      .map(id => state.calendarReservations.find(item => item.reservationId === id))
-      .filter(Boolean);
+      .map(id => notificationForReservation(id, recipientKey))
+      .filter(notification => isNotificationActionable(notification))
+      .map(rentalForNotification);
     const mode = document.querySelector('input[name="coordination-mode"]:checked')?.value || "grouped";
     if (!rentals.length) return;
     if (mode === "individual"){
@@ -3071,12 +3425,14 @@ if (typeof module !== "undefined" && module.exports){
     calendarRangesToRentals,
     cleaningForRental,
     cleaningIdForReservation,
+    coordinationActionForRental,
     coordinationRecipient,
     isValidIsoDate,
     isNotificationVisibleForRole,
     mergeCalendarReservationHistory,
     normalizeAvailabilityPayload,
     planBatchResolution,
+    planAlreadySentRegistration,
     planCalendarCleaningReconciliation,
     planNotificationReconciliation,
     reconcileRollingView,

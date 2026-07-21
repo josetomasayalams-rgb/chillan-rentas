@@ -701,6 +701,12 @@ body.admin-mode .app{ box-shadow:0 0 0 2px #f59e0b, var(--shadow); }
   border-radius:12px; background:rgba(37,211,102,.08); border:1px solid rgba(37,211,102,.3);
 }
 .whatsapp-confirm-summary{ margin:12px 0; padding-left:22px; color:var(--text); line-height:1.6; }
+.already-sent-btn{
+  border-color:rgba(148,163,184,.5);
+  background:rgba(148,163,184,.12);
+  color:#e2e8f0;
+}
+.already-sent-btn:hover{ background:rgba(148,163,184,.2); }
 .coffee-modal{ max-width:620px; }
 .coffee-reservation-list{ display:flex; flex-direction:column; gap:10px; max-height:48dvh; overflow:auto; margin:14px 0; }
 .coffee-reservation-row{
@@ -907,6 +913,8 @@ body.locked .app{
   .modal{ width:100%; max-height:calc(100dvh - 16px - env(safe-area-inset-top)); overflow-y:auto; border-radius:18px 18px 14px 14px; }
   .coordination-row{ align-items:stretch; flex-direction:column; }
   .coordination-row-state{ justify-content:flex-start; padding-left:28px; }
+  .coordination-modal .modal-actions{ display:grid; grid-template-columns:1fr; }
+  .coordination-modal .modal-actions .btn{ width:100%; min-height:44px; }
   .message-mode{ flex-direction:column; gap:9px; }
   .popover{ max-height:calc(100dvh - 28px - env(safe-area-inset-bottom)); overflow-y:auto; padding-bottom:calc(14px + env(safe-area-inset-bottom)); }
   .lock-card{ width:min(100%, 360px); padding:24px 18px 20px; }
@@ -917,18 +925,3 @@ body.locked .app{
   .btn{ font-size:13px; }
   .cell{ min-height:70px; }
 }
-/* Supabase Auth is the backend authorization boundary; the PIN remains a local UX lock. */
-.auth-gate{
-  position:fixed; inset:0; z-index:10000; display:grid; place-items:center;
-  padding:24px; background:rgba(5,12,20,.82); backdrop-filter:blur(14px);
-}
-.auth-gate[hidden]{ display:none; }
-.auth-card{ width:min(100%,420px); padding:32px; text-align:center; border-radius:24px; }
-.auth-card h2{ margin:14px 0 8px; }
-.auth-card p{ margin:0 0 20px; color:var(--muted); }
-.auth-card small{ display:block; margin-top:14px; color:var(--muted); }
-.auth-mark{
-  width:58px; height:58px; margin:auto; display:grid; place-items:center;
-  border-radius:18px; background:#153b33; color:#f5f7f2; font-weight:800; letter-spacing:.08em;
-}
-.auth-gate.denied .auth-mark{ background:#8b2f36; }

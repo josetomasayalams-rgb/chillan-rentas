@@ -11,8 +11,13 @@ cd chillan-rentas
 python3 -m http.server 8000   # luego abrir http://localhost:8000
 ```
 
-PIN de entrada: `0000` (cambiar en `app.js` → `CONFIG.opsPin`).
-PIN admin: `2407` (cambiar en `app.js` → `CONFIG.adminPin`).
+Acceso operativo vigente: PIN de entrada `0000`.
+Modo administrador permanente: PIN `2407`.
+
+Por ahora no existe una barrera Google ni una allowlist de correos dentro de la
+aplicación. Cuando estén disponibles los correos del equipo, Cloudflare Access
+reemplazará solamente el PIN de entrada; el PIN administrador seguirá siendo
+`2407`.
 
 > `file://` no funciona — el dynamic ES-module import de Supabase y los paths relativos requieren http.
 
@@ -23,10 +28,11 @@ PIN admin: `2407` (cambiar en `app.js` → `CONFIG.adminPin`).
    Crea las tablas de arriendos, limpiezas y las memorias independientes de avisos a Beatriz y Rodrigo + RLS + realtime.
 3. **Project Settings → API** → copiar **Project URL** y **anon public key**.
 4. Pegar en `app.js` arriba (líneas ~13-14, `supabaseUrl` y `supabaseAnonKey`).
-5. **Cambiar los PINes** en `app.js`:
-   - `CONFIG.opsPin` (default `"0000"`) — quien usa la vista móvil
-   - `CONFIG.adminPin` (default `"2407"`) — admin (modo edición)
-6. **Deploy**: cualquier static host. Recomendado **Cloudflare Pages** + **Cloudflare Access** (gratis hasta 50 usuarios, ver paso 6).
+5. **Verificar los PINes vigentes** en `app.js`:
+   - `CONFIG.opsPin = "0000"` — acceso actual a la vista móvil
+   - `CONFIG.adminPin = "2407"` — modo administrador permanente
+6. **Deploy**: cualquier static host. Cloudflare Access por correo es la etapa
+   futura para sustituir únicamente el PIN de entrada; no se activa todavía.
 
 ## Cómo se usa
 
@@ -39,10 +45,20 @@ PIN admin: `2407` (cambiar en `app.js` → `CONFIG.adminPin`).
   administrador puede seleccionar una o varias reservas y preparar mensajes
   separados o agrupados. Abrir WhatsApp se registra
   aparte; al volver, la persona confirma si realmente lo envió. El historial se
-  comparte por Supabase y permite corregir o reenviar.
+  comparte por Supabase y permite corregir o reenviar. Si un aviso ya se envió
+  fuera de la plataforma, el administrador puede usar **Registrar aviso previo**:
+  la reserva queda confirmada sin abrir WhatsApp ni crear un lote ficticio.
 - **WhatsApp para Rodrigo**: usa el mismo flujo, selección individual o agrupada
   y confirmación humana, pero con texto de conserjería y una memoria totalmente
   independiente de la de Beatriz.
+- **Memoria de avisos**: una reserva confirmada no vuelve a ofrecerse mientras
+  conserve las mismas fechas. Si cambia, reaparece como **Requiere nuevo aviso**;
+  el mensaje indica que la nueva coordinación reemplaza la anterior. Si una
+  reserva ya coordinada se cancela, aparece una **Cancelación pendiente de
+  aviso** con texto para dejar sin efecto la limpieza o el acceso. Una reserva
+  nueva aparece como **Pendiente**. Por ejemplo, tras registrar las cuatro
+  reservas vigentes como avisadas, una quinta reserva nueva debe ser la única
+  ofrecida.
 
 ## Archivos
 
@@ -65,7 +81,14 @@ PIN admin: `2407` (cambiar en `app.js` → `CONFIG.adminPin`).
 - `rodrigo_notifications`, `rodrigo_notification_batches` y
   `rodrigo_notification_events` conservan el mismo ciclo para conserjería sin
   mezclar confirmaciones con Beatriz.
-- RLS abierto por diseño (la defensa es la URL staying dentro del círculo familiar). Si querés cerrar, agregá Supabase Auth + passcode compartido.
+- El registro manual de un aviso previo deja la notificación en `confirmed` y
+  agrega un evento auditable sin crear un `notification_batch`; la RPC lo hace
+  en una sola transacción y cierra cualquier lote abierto que haya quedado
+  obsoleto. Un cambio posterior vuelve a `needs_update` y una cancelación ya
+  coordinada queda accionable hasta confirmar su aviso.
+- Las políticas permiten temporalmente al cliente público leer y escribir. Los
+  PINes son controles de interfaz, no autorización del backend. Cloudflare
+  Access por correo será la barrera externa cuando se reúna la lista del equipo.
 
 ## Cache busting
 
@@ -77,13 +100,18 @@ Si sólo bumpeás uno, el badge y el archivo servido no coinciden y los usuarios
 
 ## Deploy paso a paso
 
-### Cloudflare Pages + Cloudflare Access (recomendado, gratis)
+### Cloudflare Pages y activación futura de Cloudflare Access
 
 1. Subí esta repo a GitHub (privado).
 2. [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** → **Create** → **Pages** → **Connect to Git**.
 3. Framework preset = **None**, Build command vacío, Build output directory = **`/`**.
 4. Save and Deploy. URL: `https://<proyecto>.pages.dev`.
-5. **Cloudflare Access** (Zero Trust, plan Free hasta 50 usuarios): **Access** → **Applications** → **Add** → **Self-hosted**, dominio `<proyecto>.pages.dev`, Policy: **Allow** + emails de la familia.
+5. **Todavía no activar Cloudflare Access**. Cuando estén confirmados los correos
+   de José, Sofi, Beatriz, Rodrigo y Francisco, crear la aplicación de Access con
+   una política **Allow** para esa lista y retirar únicamente el PIN de entrada.
+   El PIN administrador `2407` permanece. En la misma etapa se debe retirar el
+   acceso anónimo directo a Supabase o pasar las escrituras por un backend
+   autenticado; Access sobre la página no protege por sí solo la API pública.
 
 ### Netlify Drop (sin auth, 30 segundos)
 

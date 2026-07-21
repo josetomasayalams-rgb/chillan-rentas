@@ -11,7 +11,8 @@ La plataforma es una PWA estática con una única unidad de aplicación (`app.js
   Booking y reservas particulares, visibles únicamente como “Reserva”.
 - **Avisos de coordinación:** Beatriz y Rodrigo mantienen por separado estado
   actual, lotes de WhatsApp e historial auditable asociados a identidades opacas.
-- **Acceso operativo:** bloqueo de la aplicación y modo de administración para acciones de escritura.
+- **Acceso operativo:** PIN de entrada `0000` y modo administrador permanente con
+  PIN `2407`; no hay barrera Google ni de correo dentro de la aplicación.
 
 El PIN y la preferencia de bloqueo pertenecen al cliente. Los arriendos, limpiezas y comentarios son datos de dominio y solo circulan por `state.store`.
 
@@ -20,6 +21,18 @@ selecciona reservas activas, recibe la cantidad de personas por estadía y deriv
 el café desde las fechas (`personas × noches × 2` sachets, más 2 Dolce Gusto por
 reserva). El cálculo sólo modifica el texto que se entrega a WhatsApp; la memoria
 de apertura y confirmación continúa pasando por `state.store`.
+
+Un administrador también puede registrar que uno o varios avisos pendientes ya
+se enviaron fuera de la plataforma. Esa operación confirma cada notificación y
+agrega su evento auditable, pero no abre WhatsApp ni crea un lote ficticio. La
+reconciliación excluye las notificaciones confirmadas sin cambios; una identidad
+nueva comienza en `pending` y un cambio de fechas posterior vuelve a
+`needs_update`. El texto de ese aviso declara que reemplaza la coordinación
+anterior. Si una reserva confirmada desaparece antes de finalizar, `removed`
+permanece accionable para enviar la cancelación; las reservas nunca avisadas se
+retiran sin generar ruido. Las memorias de Beatriz y Rodrigo se evalúan por
+separado. El registro previo remoto se resuelve con una RPC transaccional que
+actualiza estado, evento y lote obsoleto como una sola unidad.
 
 La presentación deriva una ventana móvil de 30 fechas desde `state.view.start`.
 Mientras `followsToday` está activo, un reconciliador diario mueve el inicio a
@@ -31,9 +44,10 @@ visible, no la persistencia.
 ## Flujo
 
 ```text
-Usuario → Google Auth → presentación estática → app.js → state.store
-                                          ├─ localStorage
-                                          └─ Supabase (datos y realtime)
+Usuario → PIN 0000 → presentación estática → app.js → state.store
+                                                ├─ localStorage (instalación sin Supabase)
+                                                └─ Supabase (datos y realtime)
+                        └─ PIN admin 2407 → acciones administrativas
 `/availability` → state.calendarSource → reservas de Airbnb, Booking y particulares de solo lectura
                                                    ↓
                                reconciliación → state.store → memoria de avisos
@@ -49,15 +63,23 @@ proveedor. La memoria registra por separado “WhatsApp abierto” y “Envío
 confirmado”; los avisos pueden prepararse individualmente o agrupados y siempre
 requieren confirmación humana. La clave del destinatario selecciona tablas y
 estado independientes, por lo que confirmar a Beatriz no confirma a Rodrigo.
+El mismo reconciliador evita repetir avisos confirmados: si las cuatro reservas
+vigentes se registran como avisadas y luego aparece una quinta sin cambios en las
+anteriores, solamente la quinta queda accionable.
 
 ## Superficies de entrega
 
 - GitHub Pages publica la carpeta como sitio estático.
 - `manifest.webmanifest` y `assets/` forman parte del artefacto desplegable.
-- El cliente Supabase se carga de forma remota y condicional; si falla, la aplicación degrada a modo local.
+- El cliente Supabase se carga de forma remota y condicional. Si Supabase está
+  configurado pero no disponible, la aplicación bloquea la operación remota para
+  no crear una copia local divergente.
 
 Las reservas sincronizadas usan `reservation_id` opaco y un índice único para mantener exactamente una limpieza automática. Las reservas manuales conservan su relación por `rental_id`.
 
-Con Supabase configurado, `initStore()` exige una sesión incluida en
-`calendar_admins`; una identidad ausente o vencida falla cerrada y nunca degrada
-a escrituras locales divergentes. RLS repite la autorización en el servidor.
+Con Supabase configurado, `initStore()` conecta directamente con el cliente
+público: por decisión temporal no exige sesión Google ni consulta una allowlist
+de correos. Las políticas permiten al cliente anónimo y autenticado operar, por
+lo que los PINes solo controlan la interfaz y no autorizan el backend. La futura
+integración de Cloudflare Access reemplazará únicamente el PIN de entrada cuando
+se confirme la lista de correos; el PIN administrador `2407` se conserva.

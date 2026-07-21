@@ -6,8 +6,9 @@ La familia puede consultar arriendos, coordinar la limpieza de salida y dejar co
 
 ## Actores
 
-- Operador: consulta calendario y actualiza tareas de limpieza.
-- Administrador: además crea, edita y cancela arriendos.
+- Operador: entra con `0000`, consulta calendario y actualiza tareas de limpieza.
+- Administrador: activa el modo con `2407`; además crea, edita y cancela
+  arriendos, prepara mensajes y gestiona la memoria de avisos.
 
 ## Reglas observables
 
@@ -32,6 +33,18 @@ La familia puede consultar arriendos, coordinar la limpieza de salida y dejar co
   y “Requiere nuevo aviso por cambio”; abrir WhatsApp nunca confirma el envío.
 - Cada destinatario conserva en Supabase su propia confirmación e historial,
   que pueden corregirse o reenviarse explícitamente sin afectar al otro.
+- El administrador puede registrar uno o varios avisos enviados previamente sin
+  abrir WhatsApp. La operación requiere confirmación explícita, no crea un lote
+  ficticio y deja un evento auditable independiente para cada destinatario.
+- Una reserva confirmada no se vuelve a ofrecer si no cambia. Una reserva nueva
+  aparece como “Pendiente” y un cambio de fechas sobre una confirmada aparece
+  como “Requiere nuevo aviso por cambio”; su mensaje dice que la nueva
+  coordinación reemplaza la anterior. Si una reserva ya coordinada se cancela,
+  aparece una “Cancelación pendiente de aviso” para dejar sin efecto la limpieza
+  o el acceso. Si cuatro reservas están confirmadas y llega una quinta, solamente
+  la quinta queda seleccionable como aviso nuevo.
+- Registrar avisos previos es atómico e idempotente: estado, evento y cierre de
+  un lote abierto obsoleto se guardan juntos o no se guarda ninguno.
 - Los calendarios se actualizan al entrar, al volver a la aplicación, cada cinco
   minutos mientras está visible y mediante el botón “Actualizar”.
 - El modo local conserva la operación en el dispositivo y avisa que no está sincronizado.
@@ -41,7 +54,11 @@ La familia puede consultar arriendos, coordinar la limpieza de salida y dejar co
 
 ## Fuera de alcance actual
 
-El PIN del cliente no implementa identidad ni autorización del backend. Una autenticación fuerte requiere un diseño separado que preserve el acceso familiar y la recuperación ante fallos.
+El PIN del cliente no implementa identidad ni autorización del backend. Por ahora
+no hay una barrera Google ni de correo: el acceso operativo permanece en `0000`
+y el administrador en `2407`. Cuando se confirme la lista de correos del equipo,
+Cloudflare Access reemplazará solamente el PIN de entrada; no reemplazará el PIN
+administrador.
 
 ## Aceptación
 

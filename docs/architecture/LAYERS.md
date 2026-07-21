@@ -6,6 +6,7 @@
 Presentación: index.html, styles.css
         ↓
 Aplicación: app.js (eventos, renderizado y reglas de UI)
+        ├─ PIN de entrada 0000 | PIN admin 2407
         ↓
 Puerto: state.store
         ↓
@@ -31,6 +32,11 @@ Fuente pública: /availability → state.calendarSource → reservas de solo lec
 
 Las preferencias locales del dispositivo —por ejemplo, si el bloqueo está activo— pueden usar `localStorage` mediante helpers dedicados. Esa excepción no autoriza a la UI a leer o escribir arriendos, limpiezas o comentarios fuera de `state.store`.
 
+Los PINes pertenecen a Presentación/Aplicación y no autorizan el backend. En la
+etapa actual no existe una dependencia de Google Auth ni de una allowlist de
+correos. Cloudflare Access se añadirá fuera de la PWA cuando estén confirmados
+los correos del equipo y reemplazará únicamente el PIN de entrada.
+
 La ventana móvil de 30 días pertenece a Presentación/Aplicación. Se deriva de
 `state.view.start`, se reconcilia con la fecha local mientras `followsToday`
 está activo y no consulta directamente ningún adaptador. Navegar un periodo sólo
@@ -43,6 +49,15 @@ las fechas sanitizadas ya cargadas y una cantidad de personas ingresada en el
 modal; calcula los insumos antes de abrir WhatsApp y no accede directamente a
 `localStorage`, Supabase ni a un adaptador. La apertura y confirmación posterior
 mantienen el contrato existente de `state.store`.
+
+**Registrar aviso previo** también pertenece a Aplicación. Filtra la selección a
+notificaciones activas `pending` o `needs_update` y cancelaciones de reservas ya
+coordinadas; persiste por `state.store` el estado `confirmed` junto con un evento
+sin `batch_id`. El adaptador remoto usa una RPC atómica y el local conserva la
+misma transición idempotente. No abre WhatsApp, no crea un lote y no accede
+directamente a Supabase. La reconciliación excluye las confirmadas sin cambios,
+vuelve a `needs_update` si cambian sus fechas y ofrece una cancelación cuando una
+coordinación confirmada desaparece.
 
 `makeCalendarSource()` es el único punto que consulta calendarios. Recibe
 rangos de fechas sanitizados con identidad HMAC opaca y nunca inserta esas

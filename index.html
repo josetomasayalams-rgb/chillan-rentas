@@ -18,20 +18,10 @@
 
   <link rel="preload" as="image" href="assets/chillan-bg-mobile.jpg" fetchpriority="high" media="(max-width:900px)">
 
-  <link rel="stylesheet" href="styles.css?v=35">
+  <link rel="stylesheet" href="styles.css?v=36">
 </head>
 <body class="locked">
   <div class="bg-layer" aria-hidden="true"></div>
-
-  <div id="auth-gate" class="auth-gate" role="dialog" aria-modal="true" aria-labelledby="auth-title" hidden>
-    <div class="auth-card glass">
-      <div class="auth-mark" aria-hidden="true">CS</div>
-      <h2 id="auth-title">Acceso protegido</h2>
-      <p id="auth-detail">Comprobando tu sesión…</p>
-      <button id="auth-google" class="btn primary" type="button">Ingresar con Google</button>
-      <small>Solo José y Sofía pueden modificar la operación.</small>
-    </div>
-  </div>
 
   <!-- Lock screen (mismo PIN para todos) -->
   <div id="lock" class="lock-overlay" role="dialog" aria-modal="true" aria-labelledby="lock-title">
@@ -206,7 +196,7 @@
 
   <!-- Modal: confirmar (genérico: cancelar arriendo, regenerar tarea, etc.) -->
   <div class="modal-overlay" id="confirm-modal" hidden>
-    <div class="modal glass" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="c-title">
+    <div class="modal glass" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="c-title" aria-describedby="c-tip">
       <h2 id="c-title">¿Confirmar?</h2>
       <p class="modal-tip" id="c-tip"></p>
       <div class="modal-actions">
@@ -220,7 +210,7 @@
   <div class="modal-overlay" id="list-modal" hidden>
     <div class="modal glass modal-wide" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="list-title">
       <h2 id="list-title">📋 Reservas</h2>
-      <p class="modal-tip">Las reservas sincronizadas son de solo lectura. Puedes preparar avisos para Beatriz o Rodrigo desde cualquier fila.</p>
+      <p class="modal-tip">Las reservas sincronizadas son de solo lectura. Solo puedes preparar avisos pendientes; los ya registrados quedan bloqueados.</p>
       <div class="rentals-list" id="rentals-list"></div>
       <div class="modal-actions">
         <button class="btn ghost" id="list-close" type="button">Cerrar</button>
@@ -230,12 +220,12 @@
 
   <!-- Bandeja operativa de avisos de limpieza; disponible sin modo admin. -->
   <div class="modal-overlay" id="coordination-modal" hidden>
-    <div class="modal glass modal-wide coordination-modal" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="coordination-title">
+    <div class="modal glass modal-wide coordination-modal" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="coordination-title" aria-describedby="coordination-summary">
       <h2 id="coordination-title">📱 Avisos de coordinación</h2>
-      <p class="modal-tip" id="coordination-summary">Cargando avisos…</p>
+      <p class="modal-tip" id="coordination-summary" aria-live="polite">Cargando avisos…</p>
       <label class="include-confirmed" data-coordination-admin>
         <input type="checkbox" id="coordination-include-confirmed">
-        Incluir reservas ya avisadas para reenviar
+        Mostrar historial de avisos
       </label>
       <div class="coordination-list" id="coordination-list"></div>
       <fieldset class="message-mode" data-coordination-admin>
@@ -246,6 +236,7 @@
       <div class="coordination-separate-queue" id="coordination-separate-queue" hidden></div>
       <div class="modal-actions">
         <button class="btn ghost" id="coordination-close" type="button">Cerrar</button>
+        <button class="btn already-sent-btn" id="coordination-already-sent" data-coordination-admin type="button" disabled>Registrar aviso previo</button>
         <button class="btn wa-btn" id="coordination-prepare" data-coordination-admin type="button" disabled>Selecciona reservas</button>
       </div>
     </div>
@@ -279,6 +270,6 @@
   </div>
 
 
-  <script src="app.js?v=35" defer></script>
+  <script src="app.js?v=36" defer></script>
 </body>
 </html>

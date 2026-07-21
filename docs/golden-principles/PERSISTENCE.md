@@ -36,10 +36,29 @@ de limpieza y Rodrigo coordinación de conserjería. Ninguna memoria modifica ni
 reexporta la reserva de origen. “WhatsApp abierto” y “Envío confirmado” son
 estados distintos y confirmar un destinatario nunca confirma al otro.
 
+Cuando un mensaje ya fue enviado fuera de la plataforma, un administrador puede
+registrarlo como aviso previo. La operación cambia únicamente notificaciones
+activas `pending` o `needs_update` —y cancelaciones `removed` de coordinaciones
+ya confirmadas— a `confirmed`, conserva `last_batch_id` nulo y agrega un evento
+`confirmed` con `batch_id` nulo. No se abre WhatsApp ni se inventa un lote para
+representar un envío que la aplicación no originó. En Supabase,
+`register_prior_notifications` ejecuta estado, evento y cierre de cualquier lote
+abierto obsoleto en una sola transacción idempotente.
+
+La reconciliación debe ser idempotente y conservar la memoria: una notificación
+confirmada con la misma identidad y fechas no vuelve a ofrecerse; una reserva
+nueva crea un `pending`; un cambio de fechas sobre una confirmada produce
+`needs_update`; una reserva retirada deja de estar activa, pero sigue accionable
+como cancelación cuando ya existía una coordinación confirmada. Por ello, si
+cuatro reservas ya están confirmadas y aparece una quinta, solo la quinta queda
+accionable. Estas reglas se aplican de forma independiente a Beatriz y Rodrigo.
+
 Una instalación deliberadamente local puede encolar avisos con IDs idempotentes.
-Cuando Supabase está configurado, una sesión ausente o un backend de identidad
-caído falla cerrado y no conmuta a almacenamiento local: así se evita crear una
-segunda fuente de verdad mientras la base remota no está disponible.
+Cuando Supabase está configurado, un fallo del backend o de persistencia falla
+cerrado y no conmuta a almacenamiento local: así se evita crear una segunda
+fuente de verdad mientras la base remota no está disponible. En la etapa vigente
+no se exige una sesión Google o de correo; el acceso de interfaz usa `0000` y el
+modo administrador conserva `2407`.
 
 ## Paridad del contrato
 
