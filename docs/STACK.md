@@ -26,3 +26,7 @@ temporizador del navegador que reconcilia el inicio una vez por minuto. No usa
 una librería de calendario ni agrega persistencia: la ventana contiene 30 fechas
 derivadas y la navegación manual sólo modifica estado de presentación. El cruce
 de mes se representa con una clase visual en el día 1, sin capa ni dependencia nueva.
+
+El cálculo de café de Beatriz usa la misma aritmética de fechas nativa. No agrega
+dependencias ni datos al contrato de calendario: la cantidad de personas vive
+sólo durante la preparación del mensaje de WhatsApp.

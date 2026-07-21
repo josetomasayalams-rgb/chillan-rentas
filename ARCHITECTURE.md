@@ -15,6 +15,12 @@ La plataforma es una PWA estática con una única unidad de aplicación (`app.js
 
 El PIN y la preferencia de bloqueo pertenecen al cliente. Los arriendos, limpiezas y comentarios son datos de dominio y solo circulan por `state.store`.
 
+El flujo administrador de Beatriz incluye un paso de preparación no persistido:
+selecciona reservas activas, recibe la cantidad de personas por estadía y deriva
+el café desde las fechas (`personas × noches × 2` sachets, más 2 Dolce Gusto por
+reserva). El cálculo sólo modifica el texto que se entrega a WhatsApp; la memoria
+de apertura y confirmación continúa pasando por `state.store`.
+
 La presentación deriva una ventana móvil de 30 fechas desde `state.view.start`.
 Mientras `followsToday` está activo, un reconciliador diario mueve el inicio a
 la fecha local vigente; la navegación manual desactiva ese seguimiento hasta

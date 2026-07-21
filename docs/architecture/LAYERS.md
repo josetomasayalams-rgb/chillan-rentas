@@ -38,6 +38,12 @@ cambia estado de vista; reservas, limpiezas y avisos siguen entrando por sus
 puertos existentes. El borde y marcador dorados del día 1 son presentación pura;
 la vista no crea franjas ni estados persistidos para separar meses.
 
+El resumen de café para Beatriz también pertenece a Presentación/Aplicación. Usa
+las fechas sanitizadas ya cargadas y una cantidad de personas ingresada en el
+modal; calcula los insumos antes de abrir WhatsApp y no accede directamente a
+`localStorage`, Supabase ni a un adaptador. La apertura y confirmación posterior
+mantienen el contrato existente de `state.store`.
+
 `makeCalendarSource()` es el único punto que consulta calendarios. Recibe
 rangos de fechas sanitizados con identidad HMAC opaca y nunca inserta esas
 entradas en `rentals`. La reconciliación escribe únicamente el estado operativo

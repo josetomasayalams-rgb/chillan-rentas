@@ -30,6 +30,12 @@ Para las bandejas independientes de Beatriz y Rodrigo, sin enviar un mensaje rea
 6. persistencia separada después de recargar y ausencia de fuente, huésped, UID o notas;
 7. diseño sin desborde en un viewport móvil.
 
+En modo administrador, al preparar cualquier aviso para Beatriz, verifica que aparezca
+antes el resumen de café. Cada reserva seleccionada debe pedir la cantidad de personas,
+mostrar sus noches y calcular `personas × noches × 2` sachets, más 2 cápsulas Dolce
+Gusto fijas. El texto resultante debe incluir ese recordatorio; el flujo de Rodrigo no
+debe mostrarlo ni mencionar café.
+
 En un viewport de 390 px confirma además que los extremos muestren completos
 `Check-in 15:00` y `Check-out 12:00`. Sin modo administrador, la bandeja de
 Cada destinatario debe conservar su botón y conteo de pendientes, pero no debe mostrar

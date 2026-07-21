@@ -18,7 +18,7 @@
 
   <link rel="preload" as="image" href="assets/chillan-bg-mobile.jpg" fetchpriority="high" media="(max-width:900px)">
 
-  <link rel="stylesheet" href="styles.css?v=34">
+  <link rel="stylesheet" href="styles.css?v=35">
 </head>
 <body class="locked">
   <div class="bg-layer" aria-hidden="true"></div>
@@ -251,6 +251,20 @@
     </div>
   </div>
 
+  <!-- Paso previo exclusivo de Beatriz: calcula el café según estadía y personas. -->
+  <div class="modal-overlay" id="beatriz-coffee-modal" hidden>
+    <div class="modal glass coffee-modal" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="beatriz-coffee-title">
+      <h2 id="beatriz-coffee-title">☕ Café para la estadía</h2>
+      <p class="modal-tip">Indica cuántas personas se alojarán. Se calculan 2 sachets por persona y por noche, más 2 cápsulas Dolce Gusto fijas por reserva.</p>
+      <div class="coffee-reservation-list" id="beatriz-coffee-rows"></div>
+      <p class="coffee-total" id="beatriz-coffee-total" aria-live="polite"></p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="beatriz-coffee-cancel" type="button">Cancelar</button>
+        <button class="btn wa-btn" id="beatriz-coffee-confirm" type="button">Abrir WhatsApp</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Confirmación explícita: abrir WhatsApp nunca cuenta como envío. -->
   <div class="modal-overlay" id="whatsapp-confirm-modal" hidden>
     <div class="modal glass" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="whatsapp-confirm-title">
@@ -265,6 +279,6 @@
   </div>
 
 
-  <script src="app.js?v=34" defer></script>
+  <script src="app.js?v=35" defer></script>
 </body>
 </html>

@@ -8,6 +8,7 @@ const {
   buildNotificationMessages,
   buildReservationToneMap,
   buildWhatsAppMessage,
+  coffeeProvisionForRental,
   calendarReservationsWithoutManualDuplicates,
   calendarRangesToRentals,
   cleaningForRental,
@@ -20,6 +21,7 @@ const {
   planCalendarCleaningReconciliation,
   planNotificationReconciliation,
   reconcileRollingView,
+  reservationNightCount,
   reservationTone,
   rollingMonthWindow,
   sourceMeta,
@@ -331,4 +333,30 @@ test("genera mensajes individuales y agrupados sin filtrar datos privados", () =
   assert.equal(buildNotificationMessages(rentals, "individual", "rodrigo").length, 2);
   assert.doesNotMatch(`${rodrigoIndividual}\n${rodrigoGrouped}`, /Airbnb|Booking|familia|Privado/i);
   assert.equal(coordinationRecipient("rodrigo").whatsapp, "56958171234");
+});
+
+test("calcula café para Beatriz por personas y noches, más dos Dolce Gusto fijas", () => {
+  const rental = { reservationId: ID_A, checkin_date: "2026-08-01", checkout_date: "2026-08-04" };
+  assert.equal(reservationNightCount(rental), 3);
+  assert.deepEqual(coffeeProvisionForRental(rental, 4), {
+    guests: 4,
+    nights: 3,
+    sachets: 24,
+    dolceGusto: 2,
+  });
+
+  const coffee = { [ID_A]: 4 };
+  const message = buildWhatsAppMessage(rental, "beatriz", coffee);
+  assert.match(message, /Café \(3 noches, 4 personas\): 24 sachets de café \+ 2 cápsulas Dolce Gusto/);
+  assert.doesNotMatch(buildWhatsAppMessage(rental, "rodrigo", coffee), /Café|Dolce Gusto/);
+});
+
+test("incluye el cálculo separado de café en mensajes agrupados para Beatriz", () => {
+  const rentals = [
+    { reservationId: ID_A, checkin_date: "2026-08-01", checkout_date: "2026-08-03" },
+    { reservationId: ID_B, checkin_date: "2026-08-07", checkout_date: "2026-08-08" },
+  ];
+  const message = buildGroupedWhatsAppMessage(rentals, "beatriz", { [ID_A]: 2, [ID_B]: 3 });
+  assert.match(message, /Café \(2 noches, 2 personas\): 8 sachets de café \+ 2 cápsulas Dolce Gusto/);
+  assert.match(message, /Café \(1 noche, 3 personas\): 6 sachets de café \+ 2 cápsulas Dolce Gusto/);
 });

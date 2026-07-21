@@ -32,8 +32,8 @@ El único código de terceros cargado por la aplicación es el cliente Supabase 
 
 El despliegue público debe acompañarse con un control de acceso externo si la privacidad requerida supera el modelo familiar actual.
 
-Los mensajes preparados para Beatriz contienen únicamente llegada, salida y
-la solicitud de limpieza. Los de Rodrigo contienen llegada, salida y la
+Los mensajes preparados para Beatriz contienen únicamente llegada, salida,
+cantidad de personas, insumos de café calculados y la solicitud de limpieza. Los de Rodrigo contienen llegada, salida y la
 solicitud de coordinación de acceso. Ninguno incluye origen de la reserva,
 grupo, huésped, UID ni notas privadas.
 

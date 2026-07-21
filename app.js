@@ -50,7 +50,7 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "34";
+const VERSION = "35";
 const AUTHORIZED_EMAILS = new Set([
   "josetomasayalams@gmail.com",
   "scamussotomayor@gmail.com",
@@ -95,6 +95,7 @@ const state = {
     beatriz: { pendingBatch: null, separateQueue: [], inboxSelection: new Set() },
     rodrigo: { pendingBatch: null, separateQueue: [], inboxSelection: new Set() },
   },
+  beatrizCoffeePrompt: null,
   activeCoordinationRecipient: "beatriz",
   store: null,
   admin: false,         // modo admin: permite crear/editar/cancelar
@@ -169,6 +170,24 @@ function addDays(iso, n){
   const { y, m, d } = parseISO(iso);
   const dt = new Date(y, m, d + n);
   return isoOf(dt.getFullYear(), dt.getMonth(), dt.getDate());
+}
+function reservationNightCount(rental){
+  if (!isValidIsoDate(rental?.checkin_date) || !isValidIsoDate(rental?.checkout_date)) return 0;
+  const start = parseISO(rental.checkin_date);
+  const end = parseISO(rental.checkout_date);
+  return Math.max(0, Math.round(
+    (Date.UTC(end.y, end.m, end.d) - Date.UTC(start.y, start.m, start.d)) / 86400000
+  ));
+}
+function coffeeProvisionForRental(rental, guests){
+  const guestCount = Math.max(1, Math.trunc(Number(guests) || 1));
+  const nights = reservationNightCount(rental);
+  return {
+    guests: guestCount,
+    nights,
+    sachets: nights * guestCount * 2,
+    dolceGusto: 2,
+  };
 }
 function rollingMonthWindow(startIso, days=CONFIG.rollingDays){
   const dates = Array.from({ length: days }, (_, index) => addDays(startIso, index));
@@ -1619,7 +1638,24 @@ function openPopover(r, anchor){
 // Construye el mensaje pre-rellenado y abre wa.me en nueva pestaña.
 // El admin puede editar el mensaje en WhatsApp antes de enviar.
 // Si el número no está configurado, muestra un toast y no abre nada.
-function buildWhatsAppMessage(r, recipientKey="beatriz"){
+function coffeeDetailsForRental(rental, coffeeByReservation){
+  if (!coffeeByReservation) return null;
+  const key = reservationVisualId(rental);
+  const guests = coffeeByReservation instanceof Map
+    ? coffeeByReservation.get(key)
+    : coffeeByReservation[key];
+  return guests == null ? null : coffeeProvisionForRental(rental, guests);
+}
+
+function coffeeReminderLine(rental, coffeeByReservation, prefix="• "){
+  const coffee = coffeeDetailsForRental(rental, coffeeByReservation);
+  if (!coffee) return null;
+  const nightLabel = coffee.nights === 1 ? "noche" : "noches";
+  const guestLabel = coffee.guests === 1 ? "persona" : "personas";
+  return `${prefix}Café (${coffee.nights} ${nightLabel}, ${coffee.guests} ${guestLabel}): ${coffee.sachets} sachets de café + ${coffee.dolceGusto} cápsulas Dolce Gusto`;
+}
+
+function buildWhatsAppMessage(r, recipientKey="beatriz", coffeeByReservation=null){
   if (recipientKey === "rodrigo"){
     return [
       "Hola Rodrigo, espero que estés bien. Te comparto una reserva confirmada del departamento de Chillán para coordinación de conserjería.",
@@ -1630,18 +1666,20 @@ function buildWhatsAppMessage(r, recipientKey="beatriz"){
       "Por favor, tenla registrada para el control de acceso y el apoyo de ingreso y salida. Gracias.",
     ].join("\n");
   }
+  const coffeeLine = coffeeReminderLine(r, coffeeByReservation);
   return [
     "Hola Beatriz, espero que estés bien. Te aviso de una reserva confirmada en el departamento de Chillán.",
     "",
     `• Check-in: ${prettyShort(r.checkin_date)} · ${CHECKIN_TIME}`,
     `• Check-out: ${prettyShort(r.checkout_date)} · ${CHECKOUT_TIME}`,
     `• Limpieza: ${prettyShort(r.checkout_date)} desde las ${CHECKOUT_TIME}`,
+    ...(coffeeLine ? [coffeeLine] : []),
     "",
     "¿Puedes confirmarme si tienes disponibilidad para realizar la limpieza de salida? Gracias.",
   ].join("\n");
 }
 
-function buildGroupedWhatsAppMessage(rentals, recipientKey="beatriz"){
+function buildGroupedWhatsAppMessage(rentals, recipientKey="beatriz", coffeeByReservation=null){
   if (recipientKey === "rodrigo"){
     const lines = [
       "Hola Rodrigo, espero que estés bien. Te comparto las próximas reservas confirmadas del departamento de Chillán para coordinación de conserjería:",
@@ -1660,19 +1698,21 @@ function buildGroupedWhatsAppMessage(rentals, recipientKey="beatriz"){
   rentals.forEach((rental, index) => {
     lines.push(`${index + 1}. Check-in ${prettyShort(rental.checkin_date)} ${CHECKIN_TIME} → Check-out ${prettyShort(rental.checkout_date)} ${CHECKOUT_TIME}`);
     lines.push(`   Limpieza: ${prettyShort(rental.checkout_date)} desde las ${CHECKOUT_TIME}`);
+    const coffeeLine = coffeeReminderLine(rental, coffeeByReservation, "   ");
+    if (coffeeLine) lines.push(coffeeLine);
   });
   lines.push("", "¿Puedes confirmarme tu disponibilidad para estas limpiezas de salida? Gracias.");
   return lines.join("\n");
 }
 
-function buildNotificationMessages(rentals, mode, recipientKey="beatriz"){
+function buildNotificationMessages(rentals, mode, recipientKey="beatriz", coffeeByReservation=null){
   const sorted = [...rentals].sort((left, right) =>
     left.checkin_date.localeCompare(right.checkin_date) || left.checkout_date.localeCompare(right.checkout_date)
   );
   if (mode === "grouped"){
-    return [{ reservationIds: sorted.map(rental => rental.reservationId), text: buildGroupedWhatsAppMessage(sorted, recipientKey) }];
+    return [{ reservationIds: sorted.map(rental => rental.reservationId), text: buildGroupedWhatsAppMessage(sorted, recipientKey, coffeeByReservation) }];
   }
-  return sorted.map(rental => ({ reservationIds: [rental.reservationId], text: buildWhatsAppMessage(rental, recipientKey) }));
+  return sorted.map(rental => ({ reservationIds: [rental.reservationId], text: buildWhatsAppMessage(rental, recipientKey, coffeeByReservation) }));
 }
 
 async function persistNotificationEvent(recipientKey, descriptor, batchId=null){
@@ -1726,12 +1766,18 @@ async function recordNotificationBatchOpened(recipientKey, rentals, mode){
   return batch;
 }
 
-async function openNotificationWhatsApp(recipientKey, rentals, mode="individual"){
+async function openNotificationWhatsApp(recipientKey, rentals, mode="individual", coffeeByReservation=null){
   if (!state.admin) return;
+  if (recipientKey === "beatriz" && !coffeeByReservation){
+    openBeatrizCoffeePrompt(rentals, mode, "notification");
+    return;
+  }
   const recipient = coordinationRecipient(recipientKey);
   const phone = (recipient.whatsapp || "").replace(/[^\d]/g, "");
   if (!phone || !rentals.length) return;
-  const message = mode === "grouped" ? buildGroupedWhatsAppMessage(rentals, recipientKey) : buildWhatsAppMessage(rentals[0], recipientKey);
+  const message = mode === "grouped"
+    ? buildGroupedWhatsAppMessage(rentals, recipientKey, coffeeByReservation)
+    : buildWhatsAppMessage(rentals[0], recipientKey, coffeeByReservation);
   const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
   const win = window.open(url, "_blank", "noopener");
   haptic([10, 20, 10]);
@@ -1767,15 +1813,19 @@ async function openNotificationWhatsApp(recipientKey, rentals, mode="individual"
   await rememberOpened();
 }
 
-function openWhatsApp(rental, recipientKey="beatriz"){
+function openWhatsApp(rental, recipientKey="beatriz", coffeeByReservation=null){
   if (!state.admin) return;   // guard: aunque alguien fuerce el botón
+  if (recipientKey === "beatriz" && !coffeeByReservation){
+    openBeatrizCoffeePrompt([rental], "individual", "direct");
+    return;
+  }
   const recipient = coordinationRecipient(recipientKey);
   const phone = (recipient.whatsapp || "").replace(/[^\d]/g, "");
   if (!phone){
     toast(`Configura el número de ${recipient.name} en app.js`, "warn");
     return;
   }
-  const msg = buildWhatsAppMessage(rental, recipientKey);
+  const msg = buildWhatsAppMessage(rental, recipientKey, coffeeByReservation);
   const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
 
   // Intentar abrir popup. Si el browser lo bloquea, mostrar fallback con
@@ -1809,6 +1859,89 @@ function openWhatsApp(rental, recipientKey="beatriz"){
     }, 100);
   } else {
     toast("📱 Abriendo WhatsApp en nueva pestaña…", "ok", 3000);
+  }
+}
+
+function openBeatrizCoffeePrompt(rentals, mode="individual", opener="notification"){
+  if (!state.admin || !rentals?.length) return;
+  const sorted = [...rentals].sort(compareReservations);
+  state.beatrizCoffeePrompt = { rentals: sorted, mode, opener };
+  const modal = document.getElementById("beatriz-coffee-modal");
+  const rows = document.getElementById("beatriz-coffee-rows");
+  rows.innerHTML = sorted.map((rental, index) => {
+    const key = reservationVisualId(rental);
+    const nights = reservationNightCount(rental);
+    return `
+      <section class="coffee-reservation-row">
+        <div class="coffee-reservation-heading">
+          <strong>Reserva ${index + 1}</strong>
+          <span>${escapeHtml(prettyShort(rental.checkin_date))} → ${escapeHtml(prettyShort(rental.checkout_date))}</span>
+        </div>
+        <p>${nights} ${nights === 1 ? "noche" : "noches"} · 2 sachets por persona y por noche</p>
+        <label>
+          Personas
+          <input class="coffee-guests" type="number" inputmode="numeric" min="1" max="30" step="1" value="1"
+                 data-coffee-key="${escapeHtml(key)}" aria-label="Personas en la reserva ${index + 1}">
+        </label>
+        <output class="coffee-result" data-coffee-result="${escapeHtml(key)}"></output>
+      </section>`;
+  }).join("");
+  modal.hidden = false;
+  updateBeatrizCoffeeSummary();
+  requestAnimationFrame(() => rows.querySelector(".coffee-guests")?.focus());
+}
+
+function closeBeatrizCoffeePrompt(){
+  const modal = document.getElementById("beatriz-coffee-modal");
+  if (modal) modal.hidden = true;
+  state.beatrizCoffeePrompt = null;
+}
+
+function collectBeatrizCoffeeGuests(){
+  const result = {};
+  document.querySelectorAll("#beatriz-coffee-rows .coffee-guests").forEach(input => {
+    const guests = Math.max(1, Math.min(30, Math.trunc(Number(input.value) || 1)));
+    input.value = String(guests);
+    result[input.dataset.coffeeKey] = guests;
+  });
+  return result;
+}
+
+function updateBeatrizCoffeeSummary(){
+  const prompt = state.beatrizCoffeePrompt;
+  if (!prompt) return;
+  const guestsByReservation = collectBeatrizCoffeeGuests();
+  let totalSachets = 0;
+  let totalDolceGusto = 0;
+  prompt.rentals.forEach(rental => {
+    const key = reservationVisualId(rental);
+    const coffee = coffeeProvisionForRental(rental, guestsByReservation[key]);
+    totalSachets += coffee.sachets;
+    totalDolceGusto += coffee.dolceGusto;
+    const output = document.querySelector(`[data-coffee-result="${CSS.escape(key)}"]`);
+    if (output) output.textContent = `${coffee.sachets} sachets + ${coffee.dolceGusto} Dolce Gusto`;
+  });
+  document.getElementById("beatriz-coffee-total").textContent = prompt.rentals.length === 1
+    ? `Se agregarán ${totalSachets} sachets de café y ${totalDolceGusto} cápsulas Dolce Gusto al mensaje.`
+    : `Total para ${prompt.rentals.length} reservas: ${totalSachets} sachets de café y ${totalDolceGusto} cápsulas Dolce Gusto.`;
+}
+
+async function confirmBeatrizCoffeePrompt(){
+  const prompt = state.beatrizCoffeePrompt;
+  if (!state.admin || !prompt) return;
+  const guestsByReservation = collectBeatrizCoffeeGuests();
+  document.getElementById("beatriz-coffee-modal").hidden = true;
+  state.beatrizCoffeePrompt = null;
+  if (prompt.opener === "notification"){
+    await openNotificationWhatsApp("beatriz", prompt.rentals, prompt.mode, guestsByReservation);
+    if (prompt.mode === "individual"){
+      const sentIds = new Set(prompt.rentals.map(reservationVisualId));
+      const coordination = coordinationData("beatriz");
+      coordination.ui.separateQueue = coordination.ui.separateQueue.filter(id => !sentIds.has(id));
+      renderCoordinationInbox();
+    }
+  } else {
+    openWhatsApp(prompt.rentals[0], "beatriz", guestsByReservation);
   }
 }
 
@@ -2761,8 +2894,10 @@ function bind(){
       const rental = state.calendarReservations.find(item => item.reservationId === action.dataset.reservationId);
       if (!rental) return;
       await openNotificationWhatsApp(recipientKey, [rental], "individual");
-      coordination.ui.separateQueue = coordination.ui.separateQueue.filter(id => id !== rental.reservationId);
-      renderCoordinationInbox();
+      if (recipientKey !== "beatriz"){
+        coordination.ui.separateQueue = coordination.ui.separateQueue.filter(id => id !== rental.reservationId);
+        renderCoordinationInbox();
+      }
     } else if (action.dataset.act === "confirm-opened"){
       const batch = coordination.batches.find(item => item.id === action.dataset.batchId);
       showWhatsAppConfirmation(recipientKey, batch);
@@ -2796,6 +2931,14 @@ function bind(){
       return;
     }
     await openNotificationWhatsApp(recipientKey, rentals, "grouped");
+  });
+  document.getElementById("beatriz-coffee-rows").addEventListener("input", event => {
+    if (event.target.matches(".coffee-guests")) updateBeatrizCoffeeSummary();
+  });
+  document.getElementById("beatriz-coffee-cancel").addEventListener("click", closeBeatrizCoffeePrompt);
+  document.getElementById("beatriz-coffee-confirm").addEventListener("click", confirmBeatrizCoffeePrompt);
+  document.getElementById("beatriz-coffee-modal").addEventListener("click", event => {
+    if (event.target.id === "beatriz-coffee-modal") closeBeatrizCoffeePrompt();
   });
   document.getElementById("whatsapp-sent").addEventListener("click", async () => {
     if (!state.admin) return;
@@ -2871,6 +3014,7 @@ function bind(){
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
     if (!document.getElementById("whatsapp-confirm-modal").hidden) closeWhatsAppConfirmation();
+    else if (!document.getElementById("beatriz-coffee-modal").hidden) closeBeatrizCoffeePrompt();
     else if (!document.getElementById("coordination-modal").hidden) closeCoordinationInbox();
     else if (!document.getElementById("list-modal").hidden) closeRentalsList();
     else if (!document.getElementById("admin-login-modal").hidden) closeAdminLogin();
@@ -2921,6 +3065,7 @@ if (typeof module !== "undefined" && module.exports){
     buildGroupedWhatsAppMessage,
     buildNotificationMessages,
     buildWhatsAppMessage,
+    coffeeProvisionForRental,
     buildReservationToneMap,
     calendarReservationsWithoutManualDuplicates,
     calendarRangesToRentals,
@@ -2935,6 +3080,7 @@ if (typeof module !== "undefined" && module.exports){
     planCalendarCleaningReconciliation,
     planNotificationReconciliation,
     reconcileRollingView,
+    reservationNightCount,
     reservationTone,
     rollingMonthWindow,
     sourceMeta,
