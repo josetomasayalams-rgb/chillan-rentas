@@ -20,13 +20,15 @@ traslada a una futura configuración de Cloudflare Access.
   abrir WhatsApp ni crear lotes ficticios, mediante una RPC transaccional.
 - [x] 2026-07-21: Los cambios de fechas generan coordinaciones de reemplazo y las
   reservas ya avisadas que se retiran generan un aviso de cancelación.
-- [ ] Publicar el cliente y la política de acceso temporal; probar arriendo,
-  limpieza, comentario y memoria de avisos en producción.
+- [x] 2026-07-21: Se publicó el cliente `v36` y la política temporal; CI validó
+  arriendos, limpiezas, comentarios y memoria, y la URL pública confirmó los
+  PINes, cero pendientes y el historial de ambos destinatarios.
 - [x] 2026-07-21: Se registraron las cuatro reservas vigentes como ya avisadas
   para Beatriz y Rodrigo; la base quedó sin pendientes ni lotes abiertos y la
   prueba de regresión confirma que una quinta nueva es la única ofrecida.
-- [ ] Cuando se reciban los cinco correos, configurar y validar Cloudflare Access
-  antes de retirar únicamente el PIN de entrada.
+- [ ] Cuando se reciban los cinco correos, configurar y validar Cloudflare Access,
+  retirar el acceso anónimo directo al backend y después retirar únicamente el
+  PIN de entrada.
 
 ## Orden y rollback
 
@@ -35,7 +37,8 @@ compatibles con el cliente público. El rollback usa el deployment anterior y el
 dump Supabase previo; nunca se borra físicamente una fila durante la operación
 normal. Cloudflare Access se incorpora en una etapa separada, después de probar
 los correos de José, Sofi, Beatriz, Rodrigo y Francisco. Esa etapa reemplaza solo
-el PIN de entrada y conserva `2407` para el modo administrador.
+el PIN de entrada, conserva `2407` para el modo administrador y cierra el acceso
+anónimo directo a Supabase.
 
 ## Validación
 
