@@ -710,25 +710,36 @@ body.admin-mode .app{ box-shadow:0 0 0 2px #f59e0b, var(--shadow); }
 .coffee-modal{ max-width:620px; }
 .coffee-reservation-list{ display:flex; flex-direction:column; gap:10px; max-height:48dvh; overflow:auto; margin:14px 0; }
 .coffee-reservation-row{
-  display:grid; grid-template-columns:minmax(0,1fr) minmax(118px,auto); gap:8px 14px;
+  display:flex; flex-direction:column; gap:10px;
   padding:13px; border:1px solid var(--glass-brd-soft); border-radius:12px;
   background:rgba(255,255,255,.05);
 }
 .coffee-reservation-heading{ display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; min-width:0; }
 .coffee-reservation-heading strong{ color:#fff; }
 .coffee-reservation-heading span{ color:var(--text-dim); font-size:13px; }
-.coffee-reservation-row p{ grid-column:1; margin:0; color:var(--text-faint); font-size:12px; }
-.coffee-reservation-row label{ grid-column:2; grid-row:1 / span 2; display:flex; flex-direction:column; gap:5px; color:var(--text-dim); font-size:12px; }
-.coffee-guests{
+.coffee-rule{ margin:0; color:var(--text-faint); font-size:12px; }
+.coffee-mode-choice{
+  display:flex; flex-wrap:wrap; gap:8px 14px; margin:0; padding:9px 10px;
+  border:1px solid var(--glass-brd-soft); border-radius:10px;
+}
+.coffee-mode-choice legend{ padding:0 5px; color:var(--text-dim); font-size:12px; }
+.coffee-mode-choice label{ display:flex; flex-direction:row; align-items:center; gap:6px; color:var(--text); font-size:13px; }
+.coffee-mode-choice input{ accent-color:#25d366; }
+.coffee-fields{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.coffee-fields[hidden]{ display:none; }
+.coffee-fields label{ display:flex; flex-direction:column; gap:5px; color:var(--text-dim); font-size:12px; }
+.coffee-fields[data-coffee-fields="automatic"]{ grid-template-columns:minmax(118px,220px); }
+.coffee-guests,
+.coffee-sachets,
+.coffee-dolce-gusto{
   width:100%; min-height:42px; padding:8px 10px; border:1px solid var(--glass-brd);
   border-radius:9px; background:rgba(4,10,28,.55); color:#fff; font:inherit;
 }
-.coffee-result{ grid-column:1 / -1; color:#fde68a; font-size:13px; font-weight:700; }
+.coffee-result{ color:#fde68a; font-size:13px; font-weight:700; }
 .coffee-total{ margin:8px 0 4px; padding:11px 12px; border-radius:10px; color:#dcfce7; background:rgba(37,211,102,.1); border:1px solid rgba(37,211,102,.3); }
 @media (max-width:560px){
-  .coffee-reservation-row{ grid-template-columns:1fr; }
-  .coffee-reservation-row label{ grid-column:1; grid-row:auto; }
-  .coffee-result{ grid-column:1; }
+  .coffee-fields{ grid-template-columns:1fr; }
+  .coffee-fields[data-coffee-fields="automatic"]{ grid-template-columns:1fr; }
 }
 
 /* ---------- Lock screen ---------- */

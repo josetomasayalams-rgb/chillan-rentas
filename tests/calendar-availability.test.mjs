@@ -18,6 +18,7 @@ const {
   isNotificationVisibleForRole,
   mergeCalendarReservationHistory,
   normalizeAvailabilityPayload,
+  parseCoffeeCount,
   planAlreadySentRegistration,
   planBatchResolution,
   planCalendarCleaningReconciliation,
@@ -516,16 +517,36 @@ test("redacta correcciones y cancelaciones como reemplazo de la coordinación an
 test("calcula café para Beatriz por personas y noches, más dos Dolce Gusto fijas", () => {
   const rental = { reservationId: ID_A, checkin_date: "2026-08-01", checkout_date: "2026-08-04" };
   assert.equal(reservationNightCount(rental), 3);
+  assert.equal(parseCoffeeCount(""), null);
+  assert.equal(parseCoffeeCount("0"), 0);
+  assert.equal(parseCoffeeCount("12"), 12);
+  assert.equal(parseCoffeeCount("-1"), null);
   assert.deepEqual(coffeeProvisionForRental(rental, 4), {
     guests: 4,
     nights: 3,
     sachets: 24,
     dolceGusto: 2,
   });
+  assert.deepEqual(coffeeProvisionForRental(rental, 0), {
+    guests: 0,
+    nights: 3,
+    sachets: 0,
+    dolceGusto: 2,
+  });
+  assert.deepEqual(coffeeProvisionForRental(rental, { mode:"manual", sachets:7, dolceGusto:5 }), {
+    guests: null,
+    nights: 3,
+    sachets: 7,
+    dolceGusto: 5,
+  });
 
   const coffee = { [ID_A]: 4 };
   const message = buildWhatsAppMessage(rental, "beatriz", coffee);
   assert.match(message, /Café \(3 noches, 4 personas\): 24 sachets de café \+ 2 cápsulas Dolce Gusto/);
+  const manualMessage = buildWhatsAppMessage(rental, "beatriz", {
+    [ID_A]: { mode:"manual", sachets:7, dolceGusto:5 },
+  });
+  assert.match(manualMessage, /Café \(cantidad elegida\): 7 sachets de café \+ 5 cápsulas Dolce Gusto/);
   assert.doesNotMatch(buildWhatsAppMessage(rental, "rodrigo", coffee), /Café|Dolce Gusto/);
 });
 
@@ -534,7 +555,10 @@ test("incluye el cálculo separado de café en mensajes agrupados para Beatriz",
     { reservationId: ID_A, checkin_date: "2026-08-01", checkout_date: "2026-08-03" },
     { reservationId: ID_B, checkin_date: "2026-08-07", checkout_date: "2026-08-08" },
   ];
-  const message = buildGroupedWhatsAppMessage(rentals, "beatriz", { [ID_A]: 2, [ID_B]: 3 });
+  const message = buildGroupedWhatsAppMessage(rentals, "beatriz", {
+    [ID_A]: 2,
+    [ID_B]: { mode:"manual", sachets:9, dolceGusto:0 },
+  });
   assert.match(message, /Café \(2 noches, 2 personas\): 8 sachets de café \+ 2 cápsulas Dolce Gusto/);
-  assert.match(message, /Café \(1 noche, 3 personas\): 6 sachets de café \+ 2 cápsulas Dolce Gusto/);
+  assert.match(message, /Café \(cantidad elegida\): 9 sachets de café \+ 0 cápsulas Dolce Gusto/);
 });

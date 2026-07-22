@@ -50,7 +50,7 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "36";
+const VERSION = "37";
 const MON_SHORT = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
 const LS = {
@@ -175,9 +175,24 @@ function reservationNightCount(rental){
     (Date.UTC(end.y, end.m, end.d) - Date.UTC(start.y, start.m, start.d)) / 86400000
   ));
 }
-function coffeeProvisionForRental(rental, guests){
-  const guestCount = Math.max(1, Math.trunc(Number(guests) || 1));
+function parseCoffeeCount(value){
+  if (value == null || String(value).trim() === "") return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) return null;
+  return Math.trunc(numeric);
+}
+function coffeeProvisionForRental(rental, selection){
   const nights = reservationNightCount(rental);
+  if (selection && typeof selection === "object" && selection.mode === "manual"){
+    return {
+      guests: null,
+      nights,
+      sachets: parseCoffeeCount(selection.sachets) ?? 0,
+      dolceGusto: parseCoffeeCount(selection.dolceGusto) ?? 0,
+    };
+  }
+  const rawGuests = selection && typeof selection === "object" ? selection.guests : selection;
+  const guestCount = parseCoffeeCount(rawGuests) ?? 1;
   return {
     guests: guestCount,
     nights,
@@ -1721,15 +1736,18 @@ function openPopover(r, anchor){
 function coffeeDetailsForRental(rental, coffeeByReservation){
   if (!coffeeByReservation) return null;
   const key = reservationVisualId(rental);
-  const guests = coffeeByReservation instanceof Map
+  const selection = coffeeByReservation instanceof Map
     ? coffeeByReservation.get(key)
     : coffeeByReservation[key];
-  return guests == null ? null : coffeeProvisionForRental(rental, guests);
+  return selection == null ? null : coffeeProvisionForRental(rental, selection);
 }
 
 function coffeeReminderLine(rental, coffeeByReservation, prefix="• "){
   const coffee = coffeeDetailsForRental(rental, coffeeByReservation);
   if (!coffee) return null;
+  if (coffee.guests == null){
+    return `${prefix}Café (cantidad elegida): ${coffee.sachets} sachets de café + ${coffee.dolceGusto} cápsulas Dolce Gusto`;
+  }
   const nightLabel = coffee.nights === 1 ? "noche" : "noches";
   const guestLabel = coffee.guests === 1 ? "persona" : "personas";
   return `${prefix}Café (${coffee.nights} ${nightLabel}, ${coffee.guests} ${guestLabel}): ${coffee.sachets} sachets de café + ${coffee.dolceGusto} cápsulas Dolce Gusto`;
@@ -2037,18 +2055,38 @@ function openBeatrizCoffeePrompt(rentals, mode="individual", opener="notificatio
   rows.innerHTML = coffeeRentals.map((rental, index) => {
     const key = reservationVisualId(rental);
     const nights = reservationNightCount(rental);
+    const defaultSachets = nights * 2;
     return `
-      <section class="coffee-reservation-row">
+      <section class="coffee-reservation-row" data-coffee-key="${escapeHtml(key)}">
         <div class="coffee-reservation-heading">
           <strong>Reserva ${index + 1}</strong>
           <span>${escapeHtml(prettyShort(rental.checkin_date))} → ${escapeHtml(prettyShort(rental.checkout_date))}</span>
         </div>
-        <p>${nights} ${nights === 1 ? "noche" : "noches"} · 2 sachets por persona y por noche</p>
-        <label>
-          Personas
-          <input class="coffee-guests" type="number" inputmode="numeric" min="1" max="30" step="1" value="1"
-                 data-coffee-key="${escapeHtml(key)}" aria-label="Personas en la reserva ${index + 1}">
-        </label>
+        <p class="coffee-rule">${nights} ${nights === 1 ? "noche" : "noches"} · cálculo sugerido: 2 sachets por persona y por noche</p>
+        <fieldset class="coffee-mode-choice">
+          <legend>Cómo definir el café</legend>
+          <label><input type="radio" name="coffee-mode-${escapeHtml(key)}" value="automatic" checked> Calcular por personas</label>
+          <label><input type="radio" name="coffee-mode-${escapeHtml(key)}" value="manual"> Elegir cantidades</label>
+        </fieldset>
+        <div class="coffee-fields" data-coffee-fields="automatic">
+          <label>
+            Personas
+            <input class="coffee-guests" type="number" inputmode="numeric" min="0" step="1" value="1"
+                   aria-label="Personas en la reserva ${index + 1}">
+          </label>
+        </div>
+        <div class="coffee-fields coffee-manual-fields" data-coffee-fields="manual" hidden>
+          <label>
+            Sachets de café
+            <input class="coffee-sachets" type="number" inputmode="numeric" min="0" step="1" value="${defaultSachets}"
+                   aria-label="Sachets de café en la reserva ${index + 1}">
+          </label>
+          <label>
+            Dolce Gusto
+            <input class="coffee-dolce-gusto" type="number" inputmode="numeric" min="0" step="1" value="2"
+                   aria-label="Cápsulas Dolce Gusto en la reserva ${index + 1}">
+          </label>
+        </div>
         <output class="coffee-result" data-coffee-result="${escapeHtml(key)}"></output>
       </section>`;
   }).join("");
@@ -2069,43 +2107,94 @@ function closeBeatrizCoffeePrompt(){
   }
 }
 
-function collectBeatrizCoffeeGuests(){
-  const result = {};
-  document.querySelectorAll("#beatriz-coffee-rows .coffee-guests").forEach(input => {
-    const guests = Math.max(1, Math.min(30, Math.trunc(Number(input.value) || 1)));
-    input.value = String(guests);
-    result[input.dataset.coffeeKey] = guests;
+function syncBeatrizCoffeeMode(row){
+  if (!row) return;
+  const mode = row.querySelector('input[type="radio"]:checked')?.value || "automatic";
+  row.querySelectorAll("[data-coffee-fields]").forEach(fields => {
+    fields.hidden = fields.dataset.coffeeFields !== mode;
   });
-  return result;
+}
+
+function coffeeSelectionFromRow(row){
+  const key = row?.dataset.coffeeKey || "";
+  const mode = row?.querySelector('input[type="radio"]:checked')?.value || "automatic";
+  if (mode === "manual"){
+    const sachetsInput = row.querySelector(".coffee-sachets");
+    const dolceGustoInput = row.querySelector(".coffee-dolce-gusto");
+    const sachets = parseCoffeeCount(sachetsInput?.value);
+    const dolceGusto = parseCoffeeCount(dolceGustoInput?.value);
+    return {
+      key,
+      selection: sachets == null || dolceGusto == null
+        ? null
+        : { mode:"manual", sachets, dolceGusto },
+      invalidInputs: [sachets == null ? sachetsInput : null, dolceGusto == null ? dolceGustoInput : null].filter(Boolean),
+    };
+  }
+  const guestsInput = row.querySelector(".coffee-guests");
+  const guests = parseCoffeeCount(guestsInput?.value);
+  return {
+    key,
+    selection: guests == null ? null : { mode:"automatic", guests },
+    invalidInputs: guests == null ? [guestsInput].filter(Boolean) : [],
+  };
+}
+
+function collectBeatrizCoffeeSelections(){
+  const selections = {};
+  const entries = [...document.querySelectorAll("#beatriz-coffee-rows .coffee-reservation-row")]
+    .map(coffeeSelectionFromRow);
+  entries.forEach(entry => {
+    if (entry.selection) selections[entry.key] = entry.selection;
+  });
+  return {
+    selections,
+    entries,
+    invalidInputs: entries.flatMap(entry => entry.invalidInputs),
+  };
 }
 
 function updateBeatrizCoffeeSummary(){
   const prompt = state.beatrizCoffeePrompt;
   if (!prompt) return;
-  const guestsByReservation = collectBeatrizCoffeeGuests();
+  const collected = collectBeatrizCoffeeSelections();
   let totalSachets = 0;
   let totalDolceGusto = 0;
   prompt.coffeeRentals.forEach(rental => {
     const key = reservationVisualId(rental);
-    const coffee = coffeeProvisionForRental(rental, guestsByReservation[key]);
+    const selection = collected.selections[key];
+    const output = document.querySelector(`[data-coffee-result="${CSS.escape(key)}"]`);
+    if (!selection){
+      if (output) output.textContent = "Completa este campo; puedes escribir 0.";
+      return;
+    }
+    const coffee = coffeeProvisionForRental(rental, selection);
     totalSachets += coffee.sachets;
     totalDolceGusto += coffee.dolceGusto;
-    const output = document.querySelector(`[data-coffee-result="${CSS.escape(key)}"]`);
     if (output) output.textContent = `${coffee.sachets} sachets + ${coffee.dolceGusto} Dolce Gusto`;
   });
-  document.getElementById("beatriz-coffee-total").textContent = prompt.coffeeRentals.length === 1
-    ? `Se agregarán ${totalSachets} sachets de café y ${totalDolceGusto} cápsulas Dolce Gusto al mensaje.`
-    : `Total para ${prompt.coffeeRentals.length} reservas: ${totalSachets} sachets de café y ${totalDolceGusto} cápsulas Dolce Gusto.`;
+  document.getElementById("beatriz-coffee-confirm").disabled = collected.invalidInputs.length > 0;
+  document.getElementById("beatriz-coffee-total").textContent = collected.invalidInputs.length
+    ? "Completa los campos vacíos para continuar. El valor 0 está permitido."
+    : prompt.coffeeRentals.length === 1
+      ? `Se agregarán ${totalSachets} sachets de café y ${totalDolceGusto} cápsulas Dolce Gusto al mensaje.`
+      : `Total para ${prompt.coffeeRentals.length} reservas: ${totalSachets} sachets de café y ${totalDolceGusto} cápsulas Dolce Gusto.`;
 }
 
 async function confirmBeatrizCoffeePrompt(){
   const prompt = state.beatrizCoffeePrompt;
   if (!state.admin || !prompt) return;
-  const guestsByReservation = collectBeatrizCoffeeGuests();
+  const collected = collectBeatrizCoffeeSelections();
+  if (collected.invalidInputs.length){
+    updateBeatrizCoffeeSummary();
+    collected.invalidInputs[0].focus();
+    toast("Completa las cantidades. Puedes usar 0.", "warn", 4500);
+    return;
+  }
   document.getElementById("beatriz-coffee-modal").hidden = true;
   state.beatrizCoffeePrompt = null;
   if (prompt.opener === "notification"){
-    await openNotificationWhatsApp("beatriz", prompt.rentals, prompt.mode, guestsByReservation);
+    await openNotificationWhatsApp("beatriz", prompt.rentals, prompt.mode, collected.selections);
     if (prompt.mode === "individual"){
       const sentIds = new Set(prompt.rentals.map(reservationVisualId));
       const coordination = coordinationData("beatriz");
@@ -2113,7 +2202,7 @@ async function confirmBeatrizCoffeePrompt(){
       renderCoordinationInbox();
     }
   } else {
-    openWhatsApp(prompt.rentals[0], "beatriz", guestsByReservation);
+    openWhatsApp(prompt.rentals[0], "beatriz", collected.selections);
   }
 }
 
@@ -3287,7 +3376,12 @@ function bind(){
     await openNotificationWhatsApp(recipientKey, rentals, "grouped");
   });
   document.getElementById("beatriz-coffee-rows").addEventListener("input", event => {
-    if (event.target.matches(".coffee-guests")) updateBeatrizCoffeeSummary();
+    if (event.target.matches('.coffee-mode-choice input[type="radio"]')){
+      syncBeatrizCoffeeMode(event.target.closest(".coffee-reservation-row"));
+    }
+    if (event.target.matches(".coffee-guests, .coffee-sachets, .coffee-dolce-gusto, .coffee-mode-choice input")){
+      updateBeatrizCoffeeSummary();
+    }
   });
   document.getElementById("beatriz-coffee-cancel").addEventListener("click", closeBeatrizCoffeePrompt);
   document.getElementById("beatriz-coffee-confirm").addEventListener("click", confirmBeatrizCoffeePrompt);
@@ -3431,6 +3525,7 @@ if (typeof module !== "undefined" && module.exports){
     isNotificationVisibleForRole,
     mergeCalendarReservationHistory,
     normalizeAvailabilityPayload,
+    parseCoffeeCount,
     planBatchResolution,
     planAlreadySentRegistration,
     planCalendarCleaningReconciliation,

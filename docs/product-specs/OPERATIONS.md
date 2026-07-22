@@ -25,6 +25,9 @@ La familia puede consultar arriendos, coordinar la limpieza de salida y dejar co
 - La salida permanece visible con su botón hasta confirmar que el aseo está listo.
 - Cada reserva permite preparar mensajes para Beatriz (limpieza) y Rodrigo
   (conserjería) con llegada y salida; WhatsApp requiere confirmación humana.
+- Antes de abrir WhatsApp para Beatriz, el administrador puede calcular el café
+  con 2 sachets por persona y por noche más 2 Dolce Gusto, o elegir manualmente
+  ambas cantidades. Los campos aceptan 0 y pueden quedar vacíos mientras se editan.
 - La bandeja selecciona una o varias reservas pendientes y permite preparar un
   mensaje agrupado o mensajes separados.
 - El operador sin modo administrador sólo ve los avisos pendientes. Preparar,
