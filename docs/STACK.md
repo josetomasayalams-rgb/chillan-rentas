@@ -21,6 +21,8 @@ La aplicación se sirve completa desde la raíz. No muevas `assets/`, `manifest.
 
 La fuente de calendario usa `fetch`, `AbortController` y una caché de última
 copia válida en `localStorage`; no necesita un SDK ni acceso iCal desde el navegador.
+La misma normalización colapsa fechas duplicadas o superpuestas antes de crear
+la proyección operativa y mantiene un contador visible de cruces.
 La memoria de avisos usa tres tablas Supabase aditivas por destinatario y los
 mismos adaptadores `state.store`; no introduce dependencias nuevas en el cliente.
 Registrar un aviso previo usa una operación del puerto: el adaptador Supabase

@@ -46,6 +46,7 @@ test("prefiere estadías individuales con identidad opaca y elimina duplicados",
       { reservationId: ID_B, startDate: "2026-07-22", endDate: "2026-07-24" },
       { reservationId: ID_A, startDate: "2026-07-20", endDate: "2026-07-22" },
       { reservationId: ID_A, startDate: "2026-07-20", endDate: "2026-07-22" },
+      { reservationId: ID_C, startDate: "2026-07-20", endDate: "2026-07-22" },
       { reservationId: ID_C, startDate: "2026-02-30", endDate: "2026-03-02" },
     ],
   });
@@ -54,6 +55,24 @@ test("prefiere estadías individuales con identidad opaca y elimina duplicados",
     { reservationId: ID_A, startDate: "2026-07-20", endDate: "2026-07-22" },
     { reservationId: ID_B, startDate: "2026-07-22", endDate: "2026-07-24" },
   ]);
+  assert.equal(normalized.overlapCount, 0);
+});
+
+test("consolida cruces parciales para no duplicar limpiezas ni avisos", () => {
+  const normalized = normalizeAvailabilityPayload({
+    version: 1,
+    status: "live",
+    reservedRanges: [
+      { reservationId: ID_A, startDate: "2026-08-01", endDate: "2026-08-02" },
+      { reservationId: ID_B, startDate: "2026-08-01", endDate: "2026-08-03" },
+      { reservationId: ID_C, startDate: "2026-08-07", endDate: "2026-08-09" },
+    ],
+  });
+  assert.deepEqual(normalized.ranges, [
+    { reservationId: ID_A, startDate: "2026-08-01", endDate: "2026-08-03" },
+    { reservationId: ID_C, startDate: "2026-08-07", endDate: "2026-08-09" },
+  ]);
+  assert.equal(normalized.overlapCount, 1);
 });
 
 test("mantiene compatibilidad temporal con blockedRanges", () => {

@@ -10,7 +10,8 @@ Resultados esperados:
 
 En un navegador, verifica que el PIN `0000` desbloquee la aplicación sin mostrar
 una barrera Google o de correo y que `2407` active el modo administrador. Luego
-prueba creación/edición/cancelación de un arriendo y la transición de la limpieza
+prueba creación/edición/cancelación/eliminación de un arriendo, usa **Deshacer**
+para recuperarlo y comprueba la transición de la limpieza
 generada. Repite en modo local y, si está autorizado, en modo remoto. Cloudflare
 Access todavía no forma parte de este recorrido.
 
@@ -26,7 +27,7 @@ muestre el rango correcto y no inserte huecos. Las flechas deben mover 30 días;
 
 Para las bandejas independientes de Beatriz y Rodrigo, sin enviar un mensaje real, verifica:
 
-1. actualización al entrar, al volver al foco y mediante “Actualizar”;
+1. actualización al entrar, al volver al foco y mediante “Sincronizar”;
 2. selección de una y varias reservas pendientes;
 3. preparación agrupada y cola de mensajes separados;
 4. transición de “WhatsApp abierto” a “Envío confirmado” o “Pendiente”;
@@ -34,6 +35,12 @@ Para las bandejas independientes de Beatriz y Rodrigo, sin enviar un mensaje rea
 6. persistencia separada después de recargar y ausencia de fuente, huésped, UID o notas;
 7. diseño sin desborde en un viewport móvil;
 8. registro de avisos previos sin abrir WhatsApp ni crear un lote.
+
+En **Editar reservas**, confirma además que una reserva local exponga Editar,
+Cancelar y Eliminar, y que una sincronizada exponga **Cambiar en origen** con
+accesos a Calendario familiar, Airbnb y Booking. Con dos rangos externos
+superpuestos, Operaciones debe mostrar una sola estadía y advertir el cruce, sin
+crear una segunda limpieza ni un segundo aviso.
 
 Para probar la memoria histórica, selecciona como administrador cuatro reservas
 `pending` o `needs_update` y usa **Registrar aviso previo**. Confirma que:

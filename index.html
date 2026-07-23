@@ -18,7 +18,7 @@
 
   <link rel="preload" as="image" href="assets/chillan-bg-mobile.jpg" fetchpriority="high" media="(max-width:900px)">
 
-  <link rel="stylesheet" href="styles.css?v=37">
+  <link rel="stylesheet" href="styles.css?v=38">
 </head>
 <body class="locked">
   <div class="bg-layer" aria-hidden="true"></div>
@@ -53,7 +53,7 @@
         <button id="add" class="btn glass primary admin-only" title="Crear nueva reserva">+ Reserva</button>
         <button id="wa-beatriz" class="btn glass wa-btn coordination-btn" disabled title="Abrir bandeja de avisos para Beatriz">📱 Beatriz</button>
         <button id="wa-rodrigo" class="btn glass wa-btn coordination-btn" disabled title="Abrir bandeja de avisos para Rodrigo">📱 Rodrigo</button>
-        <button id="list" class="btn glass admin-only" title="Ver todas las reservas">📋 Reservas</button>
+        <button id="list" class="btn glass admin-only" title="Editar, cancelar o eliminar reservas">✏️ Editar reservas</button>
         <button id="undo" class="btn glass" disabled title="No hay nada que deshacer">↩ Deshacer</button>
       </nav>
     </header>
@@ -81,7 +81,7 @@
     <footer class="foot">
       <span id="mode-badge" class="mode-badge"></span>
       <span id="calendar-badge" class="mode-badge calendar-badge">○ Cargando calendarios…</span>
-      <button id="calendar-refresh" class="btn glass sync-btn" type="button">↻ Actualizar</button>
+      <button id="calendar-refresh" class="btn glass sync-btn" type="button">↻ Sincronizar</button>
       <button id="lock-toggle" class="btn glass lock-btn admin-only" title="Lock al iniciar (solo admin)">🔒 Con clave</button>
       <button id="admin" class="btn glass admin-btn" title="Entrar al modo administrador">🔒 Entrar como admin</button>
     </footer>
@@ -209,8 +209,8 @@
   <!-- Modal: lista de arriendos (admin only) — editar / cancelar / enviar a WhatsApp -->
   <div class="modal-overlay" id="list-modal" hidden>
     <div class="modal glass modal-wide" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="list-title">
-      <h2 id="list-title">📋 Reservas</h2>
-      <p class="modal-tip">Las reservas sincronizadas son de solo lectura. Solo puedes preparar avisos pendientes; los ya registrados quedan bloqueados.</p>
+      <h2 id="list-title">✏️ Editar reservas</h2>
+      <p class="modal-tip">Las reservas creadas aquí se pueden editar, cancelar o eliminar. Las sincronizadas se cambian en Calendario familiar, Airbnb o Booking para que la corrección llegue a todas las plataformas.</p>
       <div class="rentals-list" id="rentals-list"></div>
       <div class="modal-actions">
         <button class="btn ghost" id="list-close" type="button">Cerrar</button>
@@ -270,6 +270,6 @@
   </div>
 
 
-  <script src="app.js?v=37" defer></script>
+  <script src="app.js?v=38" defer></script>
 </body>
 </html>

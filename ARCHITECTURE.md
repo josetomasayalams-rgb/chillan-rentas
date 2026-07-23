@@ -16,6 +16,12 @@ La plataforma es una PWA estática con una única unidad de aplicación (`app.js
 
 El PIN y la preferencia de bloqueo pertenecen al cliente. Los arriendos, limpiezas y comentarios son datos de dominio y solo circulan por `state.store`.
 
+En modo administrador, **Editar reservas** gestiona el ciclo completo de las
+reservas creadas en Operaciones: editar, cancelar o eliminar de forma recuperable.
+Las reservas sincronizadas no se mutan localmente porque la siguiente lectura
+iCal sobrescribiría el cambio; **Cambiar en origen** abre Calendario familiar,
+Airbnb o Booking y después el botón **Sincronizar** vuelve a consultar el estado.
+
 El flujo administrador de Beatriz incluye un paso de preparación no persistido:
 selecciona reservas activas, recibe la cantidad de personas por estadía y deriva
 el café desde las fechas (`personas × noches × 2` sachets, más 2 Dolce Gusto por
@@ -58,6 +64,9 @@ El esquema SQL conserva los invariantes de estados, relaciones y fechas. Las fro
 `state.calendarSource` consume un contrato público que contiene fechas,
 identidades HMAC opacas y frescura. Conserva la última copia válida ante fallos, nunca persiste esas
 entradas en `rentals` y evita mostrar proveedor, grupo, huésped, UID o notas.
+El cliente elimina duplicados exactos y consolida rangos parcialmente
+superpuestos antes de reconciliar limpiezas y avisos. El badge advierte cuántos
+cruces fueron consolidados para que se corrija la reserva equivocada en su origen.
 La identidad opaca permite detectar altas, cambios y retiros sin conocer el
 proveedor. La memoria registra por separado “WhatsApp abierto” y “Envío
 confirmado”; los avisos pueden prepararse individualmente o agrupados y siempre

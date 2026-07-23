@@ -17,6 +17,11 @@ const CONFIG = {
   // particulares sin exponer fuente, huésped, UID ni notas.
   familyAvailabilityUrl: "https://uimqusoylxpyljbfqumm.supabase.co/functions/v1/calendar-ical/availability",
   calendarRefreshMs: 5 * 60 * 1000,
+  reservationEditUrls: {
+    family: "https://josetomasayalams-rgb.github.io/departamento-chillan/",
+    airbnb: "https://www.airbnb.cl/multicalendar/1729206776074121490/availability-settings",
+    booking: "https://admin.booking.com/hotel/hoteladmin/extranet_ng/manage/sync/index.html?hotel_id=16884094&lang=es",
+  },
 
   // Coordinación operativa por WhatsApp. Cada destinatario conserva una
   // memoria independiente de avisos pendientes, abiertos y confirmados.
@@ -50,7 +55,7 @@ const CONFIG = {
   inactivityLockMin: 0,   // 0 = sin auto-relock (la app es de un celular, no de un admin)
 };
 
-const VERSION = "37";
+const VERSION = "38";
 const MON_SHORT = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
 const WD      = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
 const LS = {
@@ -82,7 +87,7 @@ const state = {
   rodrigoNotificationEvents: [],
   calendarReservations: [],
   calendarSource: null,
-  calendarStatus: { status: "loading", fromCache: false, error: null, lastSuccessfulSyncAt: null },
+  calendarStatus: { status: "loading", fromCache: false, error: null, lastSuccessfulSyncAt: null, overlapCount: 0 },
   calendarSyncing: false,
   calendarRefreshHandle: null,
   rollingWindowHandle: null,
@@ -161,6 +166,18 @@ function escapeHtml(s){
 function prettyShort(iso){
   const { m, d } = parseISO(iso);
   return `${d} ${["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"][m]}`;
+}
+function formatSyncTimestamp(value){
+  if (!value) return "sin hora registrada";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "sin hora registrada";
+  return new Intl.DateTimeFormat("es-CL", {
+    timeZone: "America/Santiago",
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 function addDays(iso, n){
   const { y, m, d } = parseISO(iso);
@@ -248,8 +265,9 @@ function normalizeAvailabilityPayload(payload){
     : Array.isArray(payload.blockedRanges) ? payload.blockedRanges : null;
   if (!input) throw new Error("El calendario no entregó reservas");
 
-  const seen = new Set();
-  const ranges = input.flatMap(range => {
+  const seenIds = new Set();
+  const seenRanges = new Set();
+  const deduplicatedRanges = input.flatMap(range => {
     const startDate = range?.startDate;
     const endDate = range?.endDate;
     if (!isValidIsoDate(startDate) || !isValidIsoDate(endDate) || endDate <= startDate) return [];
@@ -257,17 +275,31 @@ function normalizeAvailabilityPayload(payload){
     const reservationId = /^rsv_[a-f0-9]{32}$/.test(suppliedId)
       ? suppliedId
       : `rsv_${simpleStableHash(`${startDate}|${endDate}`)}`;
-    const key = reservationId;
-    if (seen.has(key)) return [];
-    seen.add(key);
+    const rangeKey = `${startDate}|${endDate}`;
+    if (seenIds.has(reservationId) || seenRanges.has(rangeKey)) return [];
+    seenIds.add(reservationId);
+    seenRanges.add(rangeKey);
     return [{ reservationId, startDate, endDate }];
   }).sort((a,b) => a.startDate.localeCompare(b.startDate) || a.endDate.localeCompare(b.endDate));
+
+  let overlapCount = 0;
+  const ranges = [];
+  for (const candidate of deduplicatedRanges){
+    const current = ranges.at(-1);
+    if (!current || candidate.startDate >= current.endDate){
+      ranges.push({ ...candidate });
+      continue;
+    }
+    overlapCount += 1;
+    if (candidate.endDate > current.endDate) current.endDate = candidate.endDate;
+  }
 
   return {
     version: 1,
     status: ["live","stale","unavailable"].includes(payload.status) ? payload.status : "unavailable",
     generatedAt: payload.generatedAt || null,
     lastSuccessfulSyncAt: payload.lastSuccessfulSyncAt || null,
+    overlapCount,
     ranges,
   };
 }
@@ -1052,6 +1084,7 @@ async function loadCalendarReservations(force=false){
       fromCache: calendar.fromCache,
       error: calendar.error,
       lastSuccessfulSyncAt: calendar.lastSuccessfulSyncAt,
+      overlapCount: calendar.overlapCount || 0,
     };
   }catch(error){
     state.calendarStatus = {
@@ -1059,6 +1092,7 @@ async function loadCalendarReservations(force=false){
       fromCache: false,
       error: error?.name === "AbortError" ? "Tiempo de espera agotado" : String(error?.message || error),
       lastSuccessfulSyncAt: null,
+      overlapCount: 0,
     };
   }
 }
@@ -1162,9 +1196,12 @@ async function refreshCalendarAndNotifications({ announce=false } = {}){
     render();
     updateCoordinationButtons();
     if (announce){
+      const hasOverlaps = state.calendarStatus.overlapCount > 0;
       toast(state.calendarStatus.status === "live"
-        ? "Calendarios y avisos actualizados"
-        : "Se conserva la última copia válida", state.calendarStatus.status === "live" ? "ok" : "warn");
+        ? hasOverlaps
+          ? `Sincronización lista · ${state.calendarStatus.overlapCount} cruce consolidado para evitar avisos duplicados`
+          : "Calendarios y avisos actualizados"
+        : "Se conserva la última copia válida", state.calendarStatus.status === "live" && !hasOverlaps ? "ok" : "warn", hasOverlaps ? 6500 : 1800);
     }
   }finally{
     state.calendarSyncing = false;
@@ -1179,13 +1216,21 @@ function updateCalendarBadge(){
   const refresh = document.getElementById("calendar-refresh");
   if (refresh){
     refresh.disabled = state.calendarSyncing;
-    refresh.textContent = state.calendarSyncing ? "Actualizando…" : "↻ Actualizar";
+    refresh.textContent = state.calendarSyncing ? "Sincronizando…" : "↻ Sincronizar";
   }
   badge.classList.toggle("live", status === "live" && !fromCache);
   badge.classList.toggle("warn", status !== "live" || fromCache);
   if (status === "live" && !fromCache){
-    badge.textContent = "● Airbnb · Booking · Particular al día";
-    badge.title = "Reservas sincronizadas y sanitizadas";
+    const lastSync = formatSyncTimestamp(state.calendarStatus.lastSuccessfulSyncAt);
+    if (state.calendarStatus.overlapCount > 0){
+      badge.classList.remove("live");
+      badge.classList.add("warn");
+      badge.textContent = `⚠ ${state.calendarStatus.overlapCount} cruce consolidado · sincronizado ${lastSync}`;
+      badge.title = "Hay fechas superpuestas entre calendarios. Operaciones las muestra como una sola estadía para no duplicar limpiezas ni avisos; revisa la reserva en su origen.";
+    } else {
+      badge.textContent = `● En vivo · última sincronización ${lastSync}`;
+      badge.title = "Airbnb, Booking y reservas particulares consultados desde el calendario compartido.";
+    }
   } else if (status === "stale" || fromCache){
     badge.textContent = "⚠ Calendarios con última copia válida";
     badge.title = state.calendarStatus.error || "La sincronización está atrasada";
@@ -1343,6 +1388,11 @@ async function doUndo(){
         const prev = c._prevStatus || "pending";
         const { _prevStatus, ...clean } = c;   // strip helper field
         await state.store.upsertCleaning({ ...clean, status: prev });
+      }
+    } else if (entry.op === "delete"){
+      if (entry.rental) await state.store.upsertRental(entry.rental);
+      for (const cleaning of entry.cleanings || []){
+        await state.store.upsertCleaning(cleaning);
       }
     }
     await load();
@@ -1682,8 +1732,9 @@ function openPopover(r, anchor){
   const adminActions = state.admin ? `
     <div class="pactions">
       ${coordinationActions.map(action => `<button class="pbtn wa-btn" data-act="whatsapp" data-recipient="${escapeHtml(action.recipientKey)}" title="${escapeHtml(action.title)}" ${action.actionable ? "" : "disabled"}>${escapeHtml(action.label)}</button>`).join("")}
-      ${r.readOnly ? "" : `<button class="pbtn" data-act="edit">Editar</button>
-      <button class="pbtn danger" data-act="cancel">Cancelar reserva</button>`}
+      ${r.readOnly ? `<button class="pbtn" data-act="edit-origin">↗ Cambiar en origen</button>` : `<button class="pbtn" data-act="edit">Editar</button>
+      <button class="pbtn" data-act="cancel">Cancelar</button>
+      <button class="pbtn danger" data-act="delete">Eliminar</button>`}
     </div>
   ` : "";
 
@@ -1714,6 +1765,14 @@ function openPopover(r, anchor){
           if (r.readOnly) return;
           pop.hidden = true;
           confirmCancelRental(r);
+        } else if (act === "delete"){
+          if (r.readOnly) return;
+          pop.hidden = true;
+          confirmDeleteRental(r);
+        } else if (act === "edit-origin"){
+          if (!r.readOnly) return;
+          pop.hidden = true;
+          openReservationOriginChooser();
         } else if (act === "whatsapp"){
           const recipientKey = btn.dataset.recipient || "beatriz";
           const action = coordinationActionForRental(r, recipientKey);
@@ -2607,10 +2666,13 @@ function openRentalsList(){
             ${statusBadge}
           </div>
           <div class="rl-actions">
-            ${r.readOnly ? "" : `<button class="pbtn" data-act="edit" data-id="${r.id}" title="Editar">✏️ Editar</button>`}
+            ${r.readOnly
+              ? `<button class="pbtn" data-act="edit-origin" data-id="${r.id}" title="Cambiar la reserva en el calendario donde fue creada">↗ Cambiar en origen</button>`
+              : `<button class="pbtn" data-act="edit" data-id="${r.id}" title="Editar">✏️ Editar</button>`}
             <button class="pbtn wa-btn" data-act="whatsapp" data-recipient="beatriz" data-id="${r.id}" title="${escapeHtml(beatrizAction.title)}" ${beatrizAction.actionable ? "" : "disabled"}>${escapeHtml(beatrizAction.label)}</button>
             <button class="pbtn wa-btn" data-act="whatsapp" data-recipient="rodrigo" data-id="${r.id}" title="${escapeHtml(rodrigoAction.title)}" ${rodrigoAction.actionable ? "" : "disabled"}>${escapeHtml(rodrigoAction.label)}</button>
-            ${!r.readOnly && r.status !== "cancelled" ? `<button class="pbtn danger" data-act="cancel" data-id="${r.id}" title="Cancelar reserva">Cancelar</button>` : ""}
+            ${!r.readOnly && r.status !== "cancelled" ? `<button class="pbtn" data-act="cancel" data-id="${r.id}" title="Conservar la reserva como cancelada">Cancelar</button>` : ""}
+            ${!r.readOnly ? `<button class="pbtn danger" data-act="delete" data-id="${r.id}" title="Eliminar la reserva y su tarea">Eliminar</button>` : ""}
           </div>
         </div>
       `;
@@ -2639,6 +2701,13 @@ function openRentalsList(){
         if (r.readOnly) return;
         modal.hidden = true;
         confirmCancelRental(r);
+      } else if (act === "delete"){
+        if (r.readOnly) return;
+        modal.hidden = true;
+        confirmDeleteRental(r);
+      } else if (act === "edit-origin"){
+        if (!r.readOnly) return;
+        openReservationOriginChooser();
       }
     });
   });
@@ -2646,6 +2715,23 @@ function openRentalsList(){
 }
 function closeRentalsList(){
   document.getElementById("list-modal").hidden = true;
+}
+
+function openReservationOriginChooser(){
+  toast("Esta reserva está sincronizada. Cámbiala o elimínala donde nació; luego vuelve y toca Sincronizar.", "warn", 15000, [
+    {
+      label: "Calendario familiar",
+      action: () => window.open(CONFIG.reservationEditUrls.family, "_blank", "noopener,noreferrer"),
+    },
+    {
+      label: "Airbnb",
+      action: () => window.open(CONFIG.reservationEditUrls.airbnb, "_blank", "noopener,noreferrer"),
+    },
+    {
+      label: "Booking",
+      action: () => window.open(CONFIG.reservationEditUrls.booking, "_blank", "noopener,noreferrer"),
+    },
+  ]);
 }
 
 // ---------- Modal: nueva / editar reserva ----------
@@ -2906,10 +2992,41 @@ async function confirmCancelRental(rental){
     for (const c of cs){
       await state.store.upsertCleaning({ ...c, status: "cancelled" });
     }
+    pushUndo({
+      op: "cancel",
+      rental: { ...rental },
+      cleanings: cs.map(cleaning => ({ ...cleaning, _prevStatus: cleaning.status })),
+      label: "Cancelar reserva",
+    });
     await load();
     toast("✓ Reserva cancelada", "warn");
   }catch(err){
     toast("Error al cancelar: " + (err.message || err), "err");
+  }
+}
+
+async function confirmDeleteRental(rental){
+  if (!state.admin || rental.readOnly) return;
+  const cleanings = state.cleanings.filter(cleaning => cleaning.rental_id === rental.id);
+  const ok = await askConfirm({
+    title: "¿Eliminar esta reserva?",
+    tip: `Se retirará la reserva del ${prettyShort(rental.checkin_date)} al ${prettyShort(rental.checkout_date)} y su tarea de limpieza. Podrás recuperarla con Deshacer.`,
+    yesLabel: "Sí, eliminar",
+  });
+  if (!ok) return;
+  try{
+    await state.store.removeRental(rental.id);
+    for (const cleaning of cleanings) await state.store.removeCleaning(cleaning.id);
+    pushUndo({
+      op: "delete",
+      rental: { ...rental },
+      cleanings: cleanings.map(cleaning => ({ ...cleaning })),
+      label: "Eliminar reserva",
+    });
+    await load();
+    toast("Reserva eliminada · puedes deshacer", "warn", 4500);
+  }catch(err){
+    toast("Error al eliminar: " + (err.message || err), "err");
   }
 }
 

@@ -20,6 +20,11 @@
 - Un cambio de fechas genera una coordinación de reemplazo. Una reserva ya
   coordinada que desaparece antes de terminar genera un aviso de cancelación;
   una reserva retirada antes de haber sido avisada no genera un mensaje inútil.
+- Los rangos sincronizados idénticos o superpuestos se consolidan antes de crear
+  tareas y avisos. La interfaz conserva una advertencia para corregir el cruce
+  en Calendario familiar, Airbnb o Booking.
+- Eliminar una reserva manual y su limpieza usa borrado lógico y puede
+  recuperarse inmediatamente con **Deshacer**.
 
 ## Recuperación
 

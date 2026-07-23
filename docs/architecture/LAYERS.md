@@ -63,6 +63,10 @@ coordinación confirmada desaparece.
 rangos de fechas sanitizados con identidad HMAC opaca y nunca inserta esas
 entradas en `rentals`. La reconciliación escribe únicamente el estado operativo
 de los avisos independientes a Beatriz y Rodrigo mediante `state.store`.
+Antes de esa reconciliación, la normalización colapsa rangos idénticos o
+superpuestos. Así una reserva reflejada por más de un canal no crea dos tareas
+ni dos avisos; el número de cruces permanece visible como advertencia. Las
+acciones sobre una reserva sincronizada sólo enlazan a sus posibles orígenes.
 
 El test de arquitectura permite a `app.js` importar exclusivamente `https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm`. No hay violaciones base y `tests/architecture/known-violations.json` no debe crecer. `scripts/lint.mjs` también rechaza operaciones `sb.from()` fuera de `makeSupabaseStore()`.
 

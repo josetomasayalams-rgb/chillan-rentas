@@ -66,4 +66,9 @@ en el cliente. Cruzar al mes siguiente no amplía el contrato `/availability`,
 no solicita campos adicionales y no altera los permisos de escritura. Marcar el
 día 1 en dorado, sin tintes por mes, es únicamente una decisión de presentación.
 
+**Cambiar en origen** contiene únicamente enlaces a las interfaces públicas de
+Calendario familiar, Airbnb y Booking; nunca incluye feeds iCal ni secretos.
+Las reservas sincronizadas siguen siendo de solo lectura en Operaciones. El
+borrado de reservas locales es lógico, requiere confirmación y conserva Deshacer.
+
 Comunica incidentes a los administradores de la propiedad sin compartir datos de huéspedes por canales públicos.

@@ -7,8 +7,8 @@ La familia puede consultar arriendos, coordinar la limpieza de salida y dejar co
 ## Actores
 
 - Operador: entra con `0000`, consulta calendario y actualiza tareas de limpieza.
-- Administrador: activa el modo con `2407`; además crea, edita y cancela
-  arriendos, prepara mensajes y gestiona la memoria de avisos.
+- Administrador: activa el modo con `2407`; además crea, edita, cancela y
+  elimina arriendos, prepara mensajes y gestiona la memoria de avisos.
 
 ## Reglas observables
 
@@ -21,6 +21,9 @@ La familia puede consultar arriendos, coordinar la limpieza de salida y dejar co
 - Cada barra muestra explícitamente check-in 15:00 y check-out 12:00.
 - Airbnb, Booking y reservas particulares aparecen sin fuente, huésped, grupo,
   UID ni notas, y son de solo lectura.
+- **Editar reservas** permite cambiar, cancelar o eliminar las creadas en
+  Operaciones. Las sincronizadas ofrecen **Cambiar en origen** y accesos a
+  Calendario familiar, Airbnb y Booking.
 - Cada reserva manual o sincronizada genera automáticamente su limpieza de checkout.
 - La salida permanece visible con su botón hasta confirmar que el aseo está listo.
 - Cada reserva permite preparar mensajes para Beatriz (limpieza) y Rodrigo
@@ -49,7 +52,10 @@ La familia puede consultar arriendos, coordinar la limpieza de salida y dejar co
 - Registrar avisos previos es atómico e idempotente: estado, evento y cierre de
   un lote abierto obsoleto se guardan juntos o no se guarda ninguno.
 - Los calendarios se actualizan al entrar, al volver a la aplicación, cada cinco
-  minutos mientras está visible y mediante el botón “Actualizar”.
+  minutos mientras está visible y mediante el botón “Sincronizar”, que muestra
+  la hora del último ciclo correcto.
+- Rangos idénticos o superpuestos se consolidan antes de crear limpiezas y
+  avisos; el badge advierte el cruce para corregirlo en el calendario de origen.
 - El modo local conserva la operación en el dispositivo y avisa que no está sincronizado.
 - El modo remoto comparte cambios mediante Supabase realtime.
 - La interfaz requiere confirmación antes de acciones sensibles.
